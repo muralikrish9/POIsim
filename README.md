@@ -27,14 +27,19 @@ A "jailbreak" in AI terms refers to attempts to bypass or override an AI system'
 
 1. Get the Code:
    ```bash
-   git clone https://github.com/yourusername/jailbreak-detection.git
-   cd jailbreak-detection
+   git clone https://github.com/muralikrish9/POIsim.git
+   cd POIsim
    ```
 
 2. Set Up Python Environment:
    ```bash
+   # On Windows:
    python -m venv venv
    .\venv\Scripts\activate
+
+   # On macOS/Linux:
+   python3 -m venv venv
+   source venv/bin/activate
    ```
 
 3. Install Required Packages:
