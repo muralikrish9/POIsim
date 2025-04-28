@@ -7,7 +7,7 @@ import time
 import datetime
 
 # Load all conversation history files
-files = glob.glob('conversation_backups/conversation_history_*.json')
+files = glob.glob('conversation_history.json')
 
 records = []
 for file in files:
@@ -42,16 +42,16 @@ if st.session_state.reset_triggered:
 ### FUNCTIONS -------------------------------------------
 
 # --- Classify jailbreak based on toxicity scores ---
-def classify_jailbreak(toxicity_scores):
+def classify_jailbreak(row):
     try:
-        if toxicity_scores['toxicity'] > 0.7 or toxicity_scores['insult'] > 0.6 or toxicity_scores['threat'] > 0.5:
+        if row['toxicity'] > 0.7 or row['insult'] > 0.6 or row['threat'] > 0.5:
             return True
         else:
             return False
     except:
         return False
 
-df['is_jailbreak'] = df['toxicity'].apply(classify_jailbreak)
+df['is_jailbreak'] = df.apply(classify_jailbreak, axis=1)
 
 # --- Add Sentiment Category ---
 def classify_sentiment(score):
