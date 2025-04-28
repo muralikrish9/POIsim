@@ -108,6 +108,46 @@ DEFAULT_INSULT = 0.0
 
 st.title("🚨 Jailbreak Detection Dashboard")
 
+### PROMPT ANALYSIS SECTION ----------------------------------------------
+st.header("🔍 Analyze New Prompt")
+
+# Create a form for prompt input
+with st.form("prompt_form"):
+    prompt = st.text_area("Enter your prompt to analyze:", height=100)
+    submitted = st.form_submit_button("Analyze Prompt")
+    
+    if submitted and prompt:
+        # Initialize detector
+        from classifier.jailbreak_detector import JailbreakDetector
+        detector = JailbreakDetector()
+        
+        # Analyze the prompt
+        result = detector.predict(prompt)
+        
+        # Display results
+        st.subheader("Analysis Results")
+        
+        # Create columns for metrics
+        col1, col2, col3 = st.columns(3)
+        
+        # Toxicity score
+        col1.metric("Toxicity Score", f"{result.details['toxicity_score']:.2f}")
+        
+        # Jailbreak status
+        jailbreak_status = "🛑 JAILBREAK" if result.score > 0.7 else "✅ SAFE"
+        col2.metric("Status", jailbreak_status)
+        
+        # Sentiment
+        sentiment = "Positive" if result.details['sentiment_score'] > 0 else "Negative"
+        col3.metric("Sentiment", sentiment)
+        
+        # Display detailed analysis
+        st.subheader("Detailed Analysis")
+        st.write(result.explanation)
+        
+        # Add a divider
+        st.divider()
+
 ### SIDEBAR ----------------------------------------------
 
 # Sidebar filters
