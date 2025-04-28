@@ -281,14 +281,13 @@ with tab2:
         st.plotly_chart(fig)
 
     # Detoxify Score Distribution
-    st.subheader("Detoxify Score Distributions")
     if 'toxicity' in df.columns:
-        scores_df = pd.json_normalize(df['toxicity'])
-        st.line_chart(scores_df)
+        st.subheader("Detoxify Score Distributions")
+        st.line_chart(df[['toxicity', 'threat', 'insult']])
 
    # --- Moving Average of Toxicity over Time ---
     if not filtered_df.empty:
-        scores_df = pd.json_normalize(filtered_df['toxicity'])
+        scores_df = filtered_df[['datetime', 'toxicity']].copy()
 
         # Only proceed if toxicity exists
         if 'toxicity' in scores_df.columns:
