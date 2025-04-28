@@ -24,6 +24,9 @@ from enum import Enum, auto
 import spacy
 from textblob import TextBlob
 from detoxify import Detoxify
+import psutil
+import gc
+import time
 
 # Load environment variables
 load_dotenv()
@@ -508,7 +511,8 @@ class JailbreakDetector:
     def __init__(self, model_name: str = "bert-base-uncased", max_history: int = 10, 
                  history_file: str = "conversation_history.json",
                  log_dir: str = "training_data",
-                 device: torch.device = None):
+                 device: torch.device = None,
+                 max_memory_mb: Optional[int] = None):  # Set default to None to disable auto cleanup
         self.console = Console()
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name)
@@ -644,6 +648,10 @@ class JailbreakDetector:
         
         # Initialize analysis logger
         self.logger = AnalysisLogger(log_dir)
+        self.max_memory_mb = max_memory_mb
+        self.message_count = 0
+        self.last_cleanup_time = time.time()
+        self.cleanup_interval = None  # Disable cleanup interval
     
     def _load_history(self):
         """Load conversation history from file"""
@@ -758,7 +766,7 @@ class JailbreakDetector:
                         ]
                         for phrase in common_phrases:
                             if re.search(phrase, text_lower):
-                                match_score *= 0.3
+                                match_score *= 0.7  # Reduced from 0.3 to 0.7
                     
                     # Reduce score if match is in educational context
                     if nature in [PromptNature.HARM, PromptNature.TOXIC, PromptNature.VIOLENT]:
@@ -772,7 +780,7 @@ class JailbreakDetector:
                         ]
                         for context in educational_contexts:
                             if re.search(context, text_lower):
-                                match_score *= 0.4
+                                match_score *= 0.8  # Reduced from 0.4 to 0.8
                     
                     # Reduce score if match is in hypothetical context
                     if nature in [PromptNature.HARM, PromptNature.TOXIC, PromptNature.VIOLENT]:
@@ -785,12 +793,14 @@ class JailbreakDetector:
                         ]
                         for context in hypothetical_contexts:
                             if re.search(context, text_lower):
-                                match_score *= 0.5
+                                match_score *= 0.9  # Reduced from 0.5 to 0.9
                     
                     score += match_score
             
-            # Normalize score by number of patterns
-            nature_scores[nature] = min(1.0, score / len(patterns))
+            # Normalize score by number of patterns but with a minimum threshold
+            normalized_score = min(1.0, score / len(patterns))
+            if normalized_score > 0.1:  # Only consider scores above 0.1
+                nature_scores[nature] = normalized_score
         
         # Adjust scores based on overall context
         if any(nature_scores[n] > 0.5 for n in [PromptNature.HARM, PromptNature.TOXIC, PromptNature.VIOLENT]):
@@ -810,11 +820,11 @@ class JailbreakDetector:
             for context in mitigating_contexts:
                 if re.search(context, text_lower):
                     for nature in [PromptNature.HARM, PromptNature.TOXIC, PromptNature.VIOLENT]:
-                        nature_scores[nature] *= 0.6
+                        nature_scores[nature] *= 0.8  # Reduced from 0.6 to 0.8
         
         # Determine primary nature with adjusted thresholds
         max_score = max(nature_scores.values())
-        if max_score < 0.3:  # Lower threshold for safe classification
+        if max_score < 0.2:  # Increased from 0.3 to 0.2
             return PromptNature.SAFE, nature_scores
         
         # Get the nature with highest score
@@ -1045,6 +1055,44 @@ class JailbreakDetector:
             logging.error(f"Error in toxicity analysis: {e}")
             return 0.0, {}
 
+    def check_memory_usage(self) -> bool:
+        """Check if memory usage exceeds the limit"""
+        if self.max_memory_mb is None:
+            return False
+            
+        process = psutil.Process()
+        memory_info = process.memory_info()
+        memory_mb = memory_info.rss / (1024 * 1024)  # Convert to MB
+        
+        return memory_mb > self.max_memory_mb
+
+    def cleanup_if_needed(self):
+        """Perform cleanup if memory usage is high or cleanup interval has passed"""
+        current_time = time.time()
+        
+        # Check memory usage
+        if self.check_memory_usage():
+            logging.info("Memory usage high, performing cleanup")
+            self.clear_history()
+            gc.collect()  # Force garbage collection
+            return
+            
+        # Check cleanup interval
+        if current_time - self.last_cleanup_time > self.cleanup_interval:
+            logging.info("Cleanup interval reached, performing cleanup")
+            self.clear_history()
+            gc.collect()
+            self.last_cleanup_time = current_time
+            return
+            
+        # Check message count
+        if self.message_count >= self.max_history * 2:  # Cleanup when history is twice the max
+            logging.info("Message count threshold reached, performing cleanup")
+            self.clear_history()
+            gc.collect()
+            self.message_count = 0
+            return
+
     def predict(self, text: str) -> AnalysisResult:
         """Analyze a prompt with conversation context"""
         import time
@@ -1061,6 +1109,9 @@ class JailbreakDetector:
             entities=self._extract_entities(text),
             toxicity=toxicity_details
         )
+        
+        # Increment message count
+        self.message_count += 1
         
         # Get individual analysis
         nature, nature_scores = self._analyze_nature(text)
@@ -1137,16 +1188,7 @@ class JailbreakDetector:
         
         # Log analysis for training
         context = self._get_conversation_context()
-        self.logger.log_analysis(
-            text=text,
-            result=result,
-            context=context,
-            metadata={
-                'response_state': response_analysis.state.name,
-                'response_confidence': response_analysis.confidence,
-                'risk_factors': response_analysis.risk_factors
-            }
-        )
+        self.logger.log_analysis(text, result, context)
         
         return result
 
