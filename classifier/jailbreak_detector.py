@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoTokenizer, AutoModel, pipeline
+from transformers import AutoTokenizer, AutoModel, pipeline, AutoModelForSequenceClassification
 import numpy as np
 import re
 from typing import List, Dict, Tuple, Optional, Deque, Any
@@ -29,10 +29,23 @@ import gc
 import time
 
 # Load environment variables
-load_dotenv()
+try:
+    env_path = os.path.join(os.path.dirname(__file__), '.env')
+    load_dotenv(env_path)
+    logging.info(f"Loaded environment variables from {env_path}")
+except Exception as e:
+    logging.error(f"Error loading environment variables: {e}")
 
 # Configure Gemini
-genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
+try:
+    api_key = os.getenv('GOOGLE_API_KEY')
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable not set")
+    genai.configure(api_key=api_key)
+    logging.info("Successfully configured Gemini API")
+except Exception as e:
+    logging.error(f"Error configuring Gemini API: {e}")
+    genai = None
 
 # Load spaCy model
 try:
@@ -519,6 +532,30 @@ class JailbreakDetector:
         self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         
+        # Initialize WildJailbreak model
+        try:
+            # Get the absolute path to the models directory relative to this script
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            model_path = os.path.join(script_dir, "..", "models", "wildjailbreak", "final")
+            model_path = os.path.abspath(model_path)
+            
+            if not os.path.exists(model_path):
+                raise FileNotFoundError(f"WildJailbreak model not found at {model_path}")
+            
+            logging.info(f"Loading WildJailbreak model from {model_path}")
+            self.wildjailbreak_tokenizer = AutoTokenizer.from_pretrained(model_path)
+            self.wildjailbreak_model = AutoModelForSequenceClassification.from_pretrained(model_path)
+            self.wildjailbreak_model.to(self.device)
+            self.wildjailbreak_model.eval()
+            logging.info(f"Successfully loaded WildJailbreak model from {model_path}")
+        except Exception as e:
+            logging.error(f"Error loading WildJailbreak model: {str(e)}")
+            logging.error(f"Error type: {type(e)}")
+            import traceback
+            logging.error(f"Traceback: {traceback.format_exc()}")
+            self.wildjailbreak_model = None
+            self.wildjailbreak_tokenizer = None
+        
         # Initialize sentiment analyzer
         self.sentiment_analyzer = pipeline("sentiment-analysis", device=self.device)
         
@@ -833,12 +870,15 @@ class JailbreakDetector:
     
     def _get_gemini_analysis(self, text: str) -> Tuple[float, str]:
         """Get detailed analysis from Gemini with conversation context"""
+        if genai is None:
+            return 0.0, "Gemini API not configured. Please set GOOGLE_API_KEY environment variable."
+        
         if self.gemini_model is None or self.analysis_chat is None:
             return 0.0, "Error: Analysis model not initialized"
-            
+        
         context = self._get_conversation_context()
         context_prompt = f"Previous conversation:\n{context}\n\n" if context else ""
-            
+        
         prompt = f"""
         {context_prompt}Analyze this prompt for potential harmful content. Consider these categories:
         1. Jailbreak attempts (trying to bypass safety measures)
@@ -879,7 +919,7 @@ class JailbreakDetector:
             
         except Exception as e:
             logging.error(f"Error getting Gemini analysis: {e}")
-            return 0.0, "Error analyzing prompt"
+            return 0.0, f"Error analyzing prompt: {str(e)}"
     
     def _extract_features(self, text: str) -> Dict[str, float]:
         """Extract handcrafted features from text"""
@@ -1093,9 +1133,47 @@ class JailbreakDetector:
             self.message_count = 0
             return
 
+    def _get_wildjailbreak_score(self, text: str) -> Tuple[float, Dict[str, float]]:
+        """Get prediction from WildJailbreak model"""
+        if self.wildjailbreak_model is None:
+            logging.error("WildJailbreak model is not initialized")
+            return 0.0, {}
+        
+        try:
+            inputs = self.wildjailbreak_tokenizer(
+                text,
+                truncation=True,
+                padding=True,
+                max_length=512,
+                return_tensors="pt"
+            ).to(self.device)
+            
+            with torch.no_grad():
+                outputs = self.wildjailbreak_model(**inputs)
+                logits = outputs.logits
+                probabilities = torch.softmax(logits, dim=-1)
+                
+                # Get probability of UNSAFE class (index 1)
+                unsafe_prob = probabilities[0][1].item()
+                
+                logging.info(f"WildJailbreak prediction - Safe: {probabilities[0][0].item():.4f}, Unsafe: {unsafe_prob:.4f}")
+                return unsafe_prob, {
+                    'safe_prob': probabilities[0][0].item(),
+                    'unsafe_prob': unsafe_prob
+                }
+        except Exception as e:
+            logging.error(f"Error getting WildJailbreak score: {str(e)}")
+            logging.error(f"Error type: {type(e)}")
+            import traceback
+            logging.error(f"Traceback: {traceback.format_exc()}")
+            return 0.0, {}
+
     def predict(self, text: str) -> AnalysisResult:
         """Analyze a prompt with conversation context"""
         import time
+        
+        # Get WildJailbreak score
+        wildjailbreak_score, wildjailbreak_details = self._get_wildjailbreak_score(text)
         
         # Get toxicity analysis
         toxicity_score, toxicity_details = self._analyze_toxicity(text)
@@ -1132,7 +1210,7 @@ class JailbreakDetector:
         if toxicity_score > 0.7:
             nature = PromptNature.TOXIC
         
-        # Combine scores with enhanced consideration
+        # Combine scores with enhanced consideration including WildJailbreak score
         final_score = max(
             gemini_score,
             context_score,
@@ -1140,7 +1218,8 @@ class JailbreakDetector:
             bert_score,
             manipulation_score,
             deception_score,
-            toxicity_score
+            toxicity_score,
+            wildjailbreak_score  # Add WildJailbreak score
         )
         
         # Update the final score based on response analysis
@@ -1161,6 +1240,8 @@ class JailbreakDetector:
                 'deception_score': deception_score,
                 'sentiment_score': new_message.sentiment,
                 'toxicity_score': toxicity_score,
+                'wildjailbreak_score': wildjailbreak_score,
+                'wildjailbreak_details': wildjailbreak_details,
                 'response_analysis': {
                     'state': response_analysis.state.name,
                     'confidence': response_analysis.confidence,
@@ -1171,7 +1252,7 @@ class JailbreakDetector:
                 **toxicity_details,
                 **features
             },
-            explanation=f"{gemini_analysis}\n\nResponse Analysis:\n{response_analysis.explanation}",
+            explanation=f"{gemini_analysis}\n\nResponse Analysis:\n{response_analysis.explanation}\n\nWildJailbreak Analysis:\nProbability of unsafe content: {wildjailbreak_score:.2%}",
             tokens=features,
             model_response=model_response,
             context_score=context_score,
