@@ -59,25 +59,26 @@ class JailbreakDataset(Dataset):
             'labels': torch.tensor(label, dtype=torch.long)
         }
 
-def load_and_preprocess_data(data_path: str) -> tuple:
-    """Load and preprocess the dataset"""
-    with open(data_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-
-    # Extract texts and create labels
-    texts = []
-    labels = []
+def load_and_preprocess_data(data_paths: List[str]) -> tuple:
+    """Load and preprocess multiple datasets"""
+    all_texts = []
+    all_labels = []
     
-    for entry in data:
-        # Use both goal and target for training
-        texts.append(entry['goal'])
-        texts.append(entry['target'])
-        
-        # Use is_harmful flag for labels
-        labels.append(1 if entry['is_harmful'] else 0)
-        labels.append(1 if entry['is_harmful'] else 0)
+    for data_path in data_paths:
+        with open(data_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
 
-    return texts, labels
+        # Extract texts and create labels
+        for entry in data:
+            # Use both goal and target for training
+            all_texts.append(entry['goal'])
+            all_texts.append(entry['target'])
+            
+            # Use is_harmful flag for labels
+            all_labels.append(1 if entry['is_harmful'] else 0)
+            all_labels.append(1 if entry['is_harmful'] else 0)
+
+    return all_texts, all_labels
 
 def train_model(
     model: BertForSequenceClassification,
@@ -176,9 +177,12 @@ def main():
     device = torch.device('cpu')
     logging.info(f"Using device: {device}")
 
-    # Load and preprocess data
-    data_path = os.path.join('data', 'jbb', 'processed_data.json')
-    texts, labels = load_and_preprocess_data(data_path)
+    # Load and preprocess data from both datasets
+    data_paths = [
+        os.path.join('data', 'jbb', 'processed_data.json'),
+        os.path.join('data', 'wildjailbreak', 'processed_data.json')
+    ]
+    texts, labels = load_and_preprocess_data(data_paths)
 
     # Split data
     train_texts, val_texts, train_labels, val_labels = train_test_split(
