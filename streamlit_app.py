@@ -664,11 +664,6 @@ with tab2:
         columns_order = ['status_badge'] + [col for col in display_df.columns if col != 'status_badge']
         display_df = display_df[columns_order]
 
-        # Add index column
-        display_df = display_df.reset_index(drop=True)
-        display_df.index = display_df.index + 1  # Start index from 1
-        display_df.index.name = 'Index'
-
         # Apply row highlight
         styled_df = display_df.style.apply(highlight_jailbreaks, axis=1)
 
@@ -686,18 +681,36 @@ with tab2:
         # Display the dataframe
         st.dataframe(
             styled_df,
-            use_container_width=True
+            use_container_width=True,
+            hide_index=True
         )
 
-        # Add subheader and buttons below the dataframe
+        # Add subheader and dropdown for review selection
         st.subheader("Review Analysis")
         
-        # Create a row of buttons
-        cols = st.columns(len(paginated_df))
-        for i, col in enumerate(cols):
-            with col:
-                if st.button(f"{i+1}", key=f"select_{i}", help=f"Click to view detailed analysis for row {i+1}"):
-                    st.session_state.selected_row = start_idx + i
+        # Create a dropdown with unique prompt options
+        prompt_options = []
+        prompt_indices = []
+        seen_prompts = set()
+        
+        for idx, row in paginated_df.iterrows():
+            prompt_text = row['text']
+            if prompt_text not in seen_prompts:
+                seen_prompts.add(prompt_text)
+                prompt_options.append(prompt_text)
+                prompt_indices.append(idx)
+        
+        selected_prompt = st.selectbox(
+            "Select a prompt to review:",
+            options=prompt_options,
+            index=None,
+            placeholder="Choose a prompt to review..."
+        )
+        
+        # Update selected row based on dropdown selection
+        if selected_prompt:
+            prompt_index = prompt_options.index(selected_prompt)
+            st.session_state.selected_row = start_idx + prompt_indices[prompt_index]
 
         # Display detailed analysis for selected row
         if st.session_state.selected_row is not None:
