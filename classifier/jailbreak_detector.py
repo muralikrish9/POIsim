@@ -48,6 +48,53 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
+# Initialize sentiment analysis model
+try:
+    sentiment_model = pipeline(
+        "sentiment-analysis",
+        model="distilbert/distilbert-base-uncased-finetuned-sst-2-english",
+        revision="714eb0f",
+        device=0 if torch.cuda.is_available() else -1
+    )
+    logging.info("Successfully loaded sentiment analysis model")
+except Exception as e:
+    logging.error(f"Failed to load sentiment analysis model: {e}")
+    sentiment_model = None
+
+# Initialize BERT model
+try:
+    bert_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    bert_model = AutoModel.from_pretrained("bert-base-uncased")
+    if torch.cuda.is_available():
+        bert_model = bert_model.cuda()
+    logging.info("Successfully loaded BERT model")
+except Exception as e:
+    logging.error(f"Failed to load BERT model: {e}")
+    bert_tokenizer = None
+    bert_model = None
+
+# Initialize Detoxify
+try:
+    detoxify_model = Detoxify('original')
+    logging.info("Successfully loaded Detoxify model")
+except Exception as e:
+    logging.error(f"Failed to load Detoxify model: {e}")
+    detoxify_model = None
+
+# Initialize Gemini models
+try:
+    gemini_model = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
+    response_model = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
+    analysis_chat = gemini_model.start_chat(history=[])
+    response_chat = response_model.start_chat(history=[])
+    logging.info("Successfully initialized Gemini models")
+except Exception as e:
+    logging.error(f"Failed to initialize Gemini models: {e}")
+    gemini_model = None
+    response_model = None
+    analysis_chat = None
+    response_chat = None
+
 class PromptNature(Enum):
     SAFE = auto()
     HARM = auto()
@@ -512,44 +559,45 @@ class JailbreakDetector:
                  history_file: str = "conversation_history.json",
                  log_dir: str = "training_data",
                  device: torch.device = None,
-                 max_memory_mb: Optional[int] = None):  # Set default to None to disable auto cleanup
-        self.console = Console()
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name)
-        self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model.to(self.device)
-        
-        # Initialize sentiment analyzer
-        self.sentiment_analyzer = pipeline("sentiment-analysis", device=self.device)
-        
-        # Initialize Detoxify
-        try:
-            self.detoxify = Detoxify('original')
-        except Exception as e:
-            logging.error(f"Error initializing Detoxify: {e}")
-            self.detoxify = None
-        
-        # Initialize conversation history with persistence
-        self.history_file = history_file
+                 max_memory_mb: Optional[int] = None):
+        """Initialize the jailbreak detector"""
+        self.model_name = model_name
         self.max_history = max_history
+        self.history_file = history_file
+        self.log_dir = log_dir
+        self.max_memory_mb = max_memory_mb
+        
+        # Set device
+        if device is None:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = device
+            
+        # Initialize models
+        self.sentiment_model = sentiment_model
+        self.bert_tokenizer = bert_tokenizer
+        self.bert_model = bert_model
+        self.detoxify_model = detoxify_model
+        
+        # Initialize Gemini models
+        self.gemini_model = gemini_model
+        self.response_model = response_model
+        self.analysis_chat = analysis_chat
+        self.response_chat = response_chat
+        
+        # Initialize conversation history
         self.conversation_history: Deque[Message] = deque(maxlen=max_history)
+        
+        # Load existing history if available
         self._load_history()
+        
+        # Initialize logger
+        self.logger = AnalysisLogger(log_dir)
         
         # Initialize response analyzer
         self.response_analyzer = ResponseAnalyzer()
         
-        # Initialize Gemini models with chat sessions
-        try:
-            self.gemini_model = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
-            self.response_model = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
-            self.analysis_chat = self.gemini_model.start_chat(history=[])
-            self.response_chat = self.response_model.start_chat(history=[])
-        except Exception as e:
-            logging.error(f"Error initializing Gemini models: {e}")
-            self.gemini_model = None
-            self.response_model = None
-            self.analysis_chat = None
-            self.response_chat = None
+        logging.info(f"JailbreakDetector initialized with device: {self.device}")
         
         # Enhanced jailbreak patterns
         self.jailbreak_patterns = [
@@ -646,9 +694,6 @@ class JailbreakDetector:
             ]
         }
         
-        # Initialize analysis logger
-        self.logger = AnalysisLogger(log_dir)
-        self.max_memory_mb = max_memory_mb
         self.message_count = 0
         self.last_cleanup_time = time.time()
         self.cleanup_interval = None  # Disable cleanup interval
@@ -657,43 +702,37 @@ class JailbreakDetector:
         """Load conversation history from file"""
         try:
             if os.path.exists(self.history_file):
-                with open(self.history_file, 'r', encoding='utf-8') as f:
+                with open(self.history_file, 'r') as f:
                     history_data = json.load(f)
                     self.conversation_history = deque(
                         [Message.from_dict(msg) for msg in history_data],
                         maxlen=self.max_history
                     )
+                logging.info(f"Loaded {len(self.conversation_history)} messages from history")
             else:
                 self.conversation_history = deque(maxlen=self.max_history)
-                logging.info("No conversation history file found. Starting fresh.")
+                logging.info("No existing history file found, starting with empty history")
         except Exception as e:
-            logging.warning(f"Error loading conversation history: {e}. Starting fresh.")
+            logging.error(f"Error loading history: {e}")
             self.conversation_history = deque(maxlen=self.max_history)
 
     def _save_history(self):
         """Save conversation history to file"""
         try:
-            # Convert Message objects to dictionaries
-            history_data = []
-            for msg in self.conversation_history:
-                msg_dict = msg.to_dict()  # Use the Message's to_dict method
-                history_data.append(msg_dict)
-            
-            # Save to file with proper encoding
-            with open(self.history_file, 'w', encoding='utf-8') as f:
-                json.dump(history_data, f, indent=2, ensure_ascii=False)
+            with open(self.history_file, 'w') as f:
+                json.dump(
+                    [msg.to_dict() for msg in self.conversation_history],
+                    f,
+                    indent=2
+                )
             logging.info(f"Saved {len(self.conversation_history)} messages to history")
         except Exception as e:
-            logging.error(f"Error saving conversation history: {e}")
+            logging.error(f"Error saving history: {e}")
 
     def clear_history(self):
         """Clear the conversation history and reset chat sessions"""
         self.conversation_history.clear()
         self._save_history()
-        if self.analysis_chat:
-            self.analysis_chat = self.gemini_model.start_chat(history=[])
-        if self.response_chat:
-            self.response_chat = self.response_model.start_chat(history=[])
 
     def _get_conversation_context(self) -> str:
         """Get the conversation context as a formatted string"""
@@ -1043,11 +1082,11 @@ class JailbreakDetector:
 
     def _analyze_toxicity(self, text: str) -> Tuple[float, Dict[str, float]]:
         """Analyze text for toxicity using Detoxify"""
-        if self.detoxify is None:
+        if self.detoxify_model is None:
             return 0.0, {}
             
         try:
-            results = self.detoxify.predict(text)
+            results = self.detoxify_model.predict(text)
             # Calculate overall toxicity score
             toxicity_score = max(results.values())
             return toxicity_score, results
