@@ -5,6 +5,316 @@ import glob
 import plotly.express as px
 import time
 import datetime
+from PIL import Image
+
+# Set page config with logo
+st.set_page_config(
+    page_title="Jailbreak Detection Dashboard",
+    page_icon="jailbreak-logo.png",
+    layout="wide"
+)
+
+# Load logo
+logo = Image.open('jailbreak-logo.png')
+
+# Custom CSS for enhanced styling
+st.markdown("""
+<style>
+    /* Main container styling */
+    .main {
+        background-color: #FFF3D7;
+    }
+    
+    /* Status bar and header styling */
+    .stStatusWidget {
+        background-color: #FFF3D7 !important;
+    }
+    
+    .stHeader {
+        background-color: #FFF3D7 !important;
+    }
+    
+    /* Override Streamlit's default header styles */
+    header[data-testid="stHeader"] {
+        background-color: #FFF3D7 !important;
+    }
+    
+    /* Toolbar styling */
+    .stToolbar {
+        background-color: #FFF3D7 !important;
+    }
+    
+    /* Main content area */
+    .block-container {
+        background-color: #FFF3D7;
+    }
+    
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: #FFF3D7;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: #FFC97A;
+        border-radius: 4px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: #FFC97A;
+    }
+    
+    /* Sidebar styling */
+    [data-testid="stSidebar"] {
+        background-color: #FFE8B8;
+        padding: 1rem 0.5rem;
+    }
+    
+    /* Sidebar content styling */
+    [data-testid="stSidebar"] .sidebar-content {
+        background-color: #FFE8B8;
+        padding: 0 0.5rem;
+    }
+    
+    /* Sidebar section headers */
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3 {
+        color: #333333;
+        border-bottom: 1px solid #FFDBA3;
+        padding-bottom: 0.5rem;
+        margin-top: 1rem;
+        margin-bottom: 0.75rem;
+        padding-left: 0.5rem;
+    }
+    
+    /* Sidebar widgets */
+    [data-testid="stSidebar"] .stNumberInput,
+    [data-testid="stSidebar"] .stTextInput,
+    [data-testid="stSidebar"] .stSelectbox{
+        background-color: #FFDBA3;
+        border-radius: 8px;
+        padding: 0.75rem;
+        margin: 0.5rem 0;
+        padding-left: 0.5rem;
+    }
+    
+    [data-testid="stSidebar"] .stSlider {
+        background-color: #FFDBA3;
+        border-radius: 8px;
+        padding: 0.75rem;
+        padding-left: 1rem; 
+    }
+    
+    /* Sidebar buttons */
+    [data-testid="stSidebar"] .stButton>button {
+        background-color: #FFDBA3;
+        color: #333333;
+        border: 1px solid #FFC97A;
+        padding: 0.5rem 1.25rem;
+        margin: 0.5rem 0;
+        margin-left: 0.5rem;
+    }
+    
+    /* Sidebar metric cards */
+    [data-testid="stSidebar"] .stMetric {
+        background-color: #FFDBA3;
+        border: 1px solid #FFC97A;
+        padding: 1rem;
+        margin: 0.75rem 0;
+        padding-left: 0.5rem;
+    }
+    
+    /* Sidebar widget labels */
+    [data-testid="stSidebar"] label {
+        margin-bottom: 0.5rem;
+        padding-left: 0.5rem;
+    }
+    
+    /* Main content widgets */
+    .stTextInput,
+    .stTextArea,
+    .stSelectbox,
+    .stSlider,
+    .stNumberInput {
+        background-color: #FFE8B8;
+        border-radius: 8px;
+        padding: 0.75rem;
+    }
+    
+    /* Main content buttons */
+    .stButton>button {
+        background-color: #FFE8B8;
+        color: #333333;
+        border: 1px solid #FFDBA3;
+    }
+    
+    /* Main content metric cards */
+    .stMetric {
+        background-color: #FFE8B8;
+        border: 1px solid #FFDBA3;
+    }
+    
+    /* Logo and title container */
+    .logo-title-container {
+        background-color: #FFF3D7;
+        display: flex;
+        align-items: center;
+        
+    }
+    
+    .logo-container {
+        display: flex;
+        align-items: right;
+    }
+    
+    .title-container {
+        display: flex;
+        align-items: left;
+        margin-top: 3rem;
+    }
+    
+    /* Button styling */
+    .stButton>button {
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+        background-color: #6C63FF;
+        color: white;
+    }
+    
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    
+    /* Metric card styling */
+    .stMetric {
+        background-color: #FFF9EE;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        border: 1px solid #E9ECEF;
+        transition: all 0.3s ease;
+    }
+    
+    .stMetric:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    
+    /* Header styling */
+    h1 {
+        color: #6C63FF;
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+    }
+    
+    h2 {
+        color: #495057;
+        font-weight: 600;
+        margin-bottom: 1rem;
+    }
+    
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 1rem;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+    }
+    
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: #E9ECEF;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background-color: #6C63FF;
+        color: white;
+    }
+    
+    /* Form styling */
+    .stForm {
+        border: none !important;
+        background-color: transparent !important;
+    }
+    
+    /* Form container styling */
+    .element-container .stForm {
+        border: none !important;
+        background-color: transparent !important;
+    }
+    
+    /* Form content styling */
+    .stForm > div {
+        background-color: transparent !important;
+    }
+    
+    /* Text input styling */
+    .stTextInput>div>div>input,
+    .stTextArea>div>div>textarea {
+        border-radius: 8px;
+        border: 0px solid #E9ECEF;
+        padding: 0.5rem;
+        background-color: #FFF9EE !important;
+    }
+    
+    /* Number input styling */
+    [data-testid="stNumberInput"] input {
+        background-color: #FFF9EE !important;
+        border-radius: 8px !important;
+        border: 0px solid #E9ECEF !important;
+        padding: 0.5rem !important;
+    }
+    
+    
+    
+    /* Button styling */
+    .stButton > button {
+        padding: 0.25rem 0.5rem !important;
+        margin: 0 !important;
+        height: 2rem !important;
+        min-height: 2rem !important;
+        line-height: 1 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-size: 0.875rem !important;
+        border-radius: 4px !important;
+    }
+    
+    /* Container styling */
+    .element-container {
+        margin-bottom: 0 !important;
+    }
+    
+    /* Placeholder styling */
+    .placeholder {
+        height: 1.75rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    /* Add custom CSS for the red button */
+    div[data-testid="stButton"] > button[kind="primary"] {
+        background-color: #FF4B4B !important;
+        border-color: #FF4B4B !important;
+    }
+    div[data-testid="stButton"] > button[kind="primary"]:hover {
+        background-color: #FF3333 !important;
+        border-color: #FF3333 !important;
+    }
+    div[data-testid="stButton"] > button[kind="primary"]:focus:not(:active) {
+        border-color: #FF4B4B !important;
+        box-shadow: 0 0 0 0.2rem rgba(255, 75, 75, 0.5) !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Load all conversation history files
 files = glob.glob('conversation_history.json')
@@ -106,47 +416,18 @@ DEFAULT_INSULT = 0.0
 
 # --------------------------------------------------------
 
-st.title("🚨 Jailbreak Detection Dashboard")
-
-### PROMPT ANALYSIS SECTION ----------------------------------------------
-st.header("🔍 Analyze New Prompt")
-
-# Create a form for prompt input
-with st.form("prompt_form"):
-    prompt = st.text_area("Enter your prompt to analyze:", height=100)
-    submitted = st.form_submit_button("Analyze Prompt")
-    
-    if submitted and prompt:
-        # Initialize detector
-        from classifier.jailbreak_detector import JailbreakDetector
-        detector = JailbreakDetector()
-        
-        # Analyze the prompt
-        result = detector.predict(prompt)
-        
-        # Display results
-        st.subheader("Analysis Results")
-        
-        # Create columns for metrics
-        col1, col2, col3 = st.columns(3)
-        
-        # Toxicity score
-        col1.metric("Toxicity Score", f"{result.details['toxicity_score']:.2f}")
-        
-        # Jailbreak status
-        jailbreak_status = "🛑 JAILBREAK" if result.score > 0.7 else "✅ SAFE"
-        col2.metric("Status", jailbreak_status)
-        
-        # Sentiment
-        sentiment = "Positive" if result.details['sentiment_score'] > 0 else "Negative"
-        col3.metric("Sentiment", sentiment)
-        
-        # Display detailed analysis
-        st.subheader("Detailed Analysis")
-        st.write(result.explanation)
-        
-        # Add a divider
-        st.divider()
+# Title with logo
+st.markdown('<div class="logo-title-container">', unsafe_allow_html=True)
+col1, col2 = st.columns([1, 4])
+with col1:
+    st.markdown('<div class="logo-container">', unsafe_allow_html=True)
+    st.image(logo, width=600)
+    st.markdown('</div>', unsafe_allow_html=True)
+with col2:
+    st.markdown('<div class="title-container">', unsafe_allow_html=True)
+    st.title("Jailbreak Detection Dashboard")
+    st.markdown('</div>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
 ### SIDEBAR ----------------------------------------------
 
@@ -172,13 +453,13 @@ if 'insult_slider' not in st.session_state:
 
 # Create sliders that always use the current session state value
 min_toxicity = st.sidebar.slider(
-    "Minimum Toxicity", 0.0, 1.0, value=st.session_state['toxicity_slider'], key="toxicity_slider"
+    "Minimum Toxicity", 0.0, 1.0, key="toxicity_slider"
 )
 min_threat = st.sidebar.slider(
-    "Minimum Threat", 0.0, 1.0, value=st.session_state['threat_slider'], key="threat_slider"
+    "Minimum Threat", 0.0, 1.0, key="threat_slider"
 )
 min_insult = st.sidebar.slider(
-    "Minimum Insult", 0.0, 1.0, value=st.session_state['insult_slider'], key="insult_slider"
+    "Minimum Insult", 0.0, 1.0, key="insult_slider"
 )
 
 # Time Filter
@@ -242,24 +523,124 @@ if filtered_df.empty:
     st.warning("⚠️ No data available with the current filters. Try adjusting your Detoxify thresholds, time filters, or search terms.")
     st.stop()
 
-### --- Summary Panel ---
-st.markdown("## 📊 Summary Panel")
-
-col1, col2, col3 = st.columns(3)
-
-col1.metric("Total Prompts", total_prompts)
-col2.metric("% Jailbreaks", f"{percent_jailbreaks:.2f}%")
-col3.metric("Avg Toxicity", f"{avg_toxicity:.2f}")
-
 # --------------------------------------------------------
 
-
 ### --- TABS ---
-tab1, tab2, tab3 = st.tabs(["📄 Browse", "📊 Charts", "⚙️ Settings"])
+tab1, tab2, tab3, tab4 = st.tabs(["Analyze Prompt", "Browse", "Charts", "⚙️ Settings"])
 
-# --- Pagination ---
+# --- Prompt Analysis Tab ---
 with tab1:
-    st.header("📄 Browse Results")
+    st.header("Analyze New Prompt")
+
+    # Create a form for prompt input
+    with st.form("analyze_prompt_form"):
+        prompt = st.text_area("Enter your prompt to analyze:", height=100)
+        submitted = st.form_submit_button("Analyze Prompt")
+        
+        if submitted and prompt:
+            # Initialize detector
+            from classifier.jailbreak_detector import JailbreakDetector
+            detector = JailbreakDetector()
+            
+            # Analyze the prompt
+            result = detector.predict(prompt)
+            
+            # Display results
+            st.subheader("Analysis Results")
+            
+            # Create columns for metrics
+            col1, col2, col3 = st.columns(3)
+            
+            # Toxicity score with progress bar
+            toxicity_score = result.details['toxicity_score']
+            toxicity_color = "red" if toxicity_score > 0.7 else "orange" if toxicity_score > 0.3 else "green"
+            col1.markdown(f"**Toxicity Score**")
+            col1.progress(toxicity_score, text=f"{toxicity_score:.2%}")
+            col1.markdown(f"<span style='color: {toxicity_color}'>Risk Level: {'High' if toxicity_score > 0.7 else 'Medium' if toxicity_score > 0.3 else 'Low'}</span>", unsafe_allow_html=True)
+            
+            # Jailbreak status with explanation
+            jailbreak_status = "🛑 JAILBREAK" if result.score > 0.7 else "✅ SAFE"
+            col2.markdown(f"**Status**")
+            col2.markdown(f"<h2 style='text-align: center; color: {'red' if result.score > 0.7 else 'green'}'> {jailbreak_status} </h2>", unsafe_allow_html=True)
+            col2.markdown(f"<span style='color: {'red' if result.score > 0.7 else 'green'}'>This prompt is {'likely a jailbreak attempt' if result.score > 0.7 else 'considered safe'}</span>", unsafe_allow_html=True)
+            
+            # Sentiment with color coding
+            sentiment_score = result.details['sentiment_score']
+            sentiment_color = "red" if sentiment_score < -0.3 else "green" if sentiment_score > 0.3 else "gray"
+            sentiment_text = "Negative" if sentiment_score < -0.3 else "Positive" if sentiment_score > 0.3 else "Neutral"
+            col3.markdown(f"**Sentiment**")
+            col3.markdown(f"<h2 style='text-align: center; color: {sentiment_color}'> {sentiment_text} </h2>", unsafe_allow_html=True)
+            col3.markdown(f"<span style='color: {sentiment_color}'>Score: {sentiment_score:.2f}</span>", unsafe_allow_html=True)
+            
+            # Display the prompt text
+            st.divider()
+            st.markdown("**Prompt Text**")
+            st.text_area("", prompt, height=75, disabled=True)
+            
+            # Display detailed analysis
+            st.divider()
+            st.markdown("**Analysis Explanation**")
+            
+            # Split the explanation into parts
+            explanation_parts = result.explanation.split('\n\n')
+            
+            # Display the analysis part
+            st.markdown(explanation_parts[0])
+            
+            # Display the response analysis part
+            st.markdown(explanation_parts[1])
+            
+            st.divider()
+            st.markdown("**Toxicity Analysis**")
+            col1, col2, col3 = st.columns(3)
+            
+            # Get toxicity scores from the result details
+            toxicity_scores = result.details
+            
+            # First row of metrics
+            with col1:
+                toxicity = toxicity_scores.get('toxicity', 0)
+                st.markdown("**Toxicity**")
+                st.progress(toxicity, text=f"{toxicity:.2%}")
+                
+            with col2:
+                severe_toxicity = toxicity_scores.get('severe_toxicity', 0)
+                st.markdown("**Severe Toxicity**")
+                st.progress(severe_toxicity, text=f"{severe_toxicity:.2%}")
+                
+            with col3:
+                obscene = toxicity_scores.get('obscene', 0)
+                st.markdown("**Obscene**")
+                st.progress(obscene, text=f"{obscene:.2%}")
+            
+            # Second row of metrics
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                threat = toxicity_scores.get('threat', 0)
+                st.markdown("**Threat**")
+                st.progress(threat, text=f"{threat:.2%}")
+                
+            with col2:
+                insult = toxicity_scores.get('insult', 0)
+                st.markdown("**Insult**")
+                st.progress(insult, text=f"{insult:.2%}")
+                
+            with col3:
+                identity_attack = toxicity_scores.get('identity_attack', 0)
+                st.markdown("**Identity Attack**")
+                st.progress(identity_attack, text=f"{identity_attack:.2%}")
+            
+            # Display the final assessment if it exists
+            if len(explanation_parts) > 2:
+                st.markdown(explanation_parts[2])
+            
+            # Add a divider
+            st.divider()
+
+# --- Browse Tab ---
+with tab2:
+    st.header("Browse Results")
 
     num_pages = (len(filtered_df) - 1) // rows_per_page + 1
 
@@ -288,20 +669,180 @@ with tab1:
 
         # Apply color to detoxify columns
         detoxify_columns = ['toxicity', 'threat', 'insult']
-        styled_df = styled_df.applymap(color_detoxify, subset=detoxify_columns)
+        styled_df = styled_df.map(color_detoxify, subset=detoxify_columns)
 
-        st.dataframe(styled_df, use_container_width=True, hide_index=True)
+        # Initialize selection state if not exists
+        if "selected_row" not in st.session_state:
+            st.session_state.selected_row = None
 
-with tab2:
-    st.header("📊 Analysis Charts")
+        # Create a container for the table and buttons
+        container = st.container()
+        
+        # Display the dataframe
+        st.dataframe(
+            styled_df,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # Add subheader and dropdown for review selection
+        st.subheader("Review Analysis")
+        
+        # Create a dropdown with unique prompt options
+        prompt_options = []
+        prompt_indices = []
+        seen_prompts = set()
+        
+        for idx, row in paginated_df.iterrows():
+            prompt_text = row['text']
+            if prompt_text not in seen_prompts:
+                seen_prompts.add(prompt_text)
+                prompt_options.append(prompt_text)
+                prompt_indices.append(idx)
+        
+        selected_prompt = st.selectbox(
+            "Select a prompt to review:",
+            options=prompt_options,
+            index=None,
+            placeholder="Choose a prompt to review..."
+        )
+        
+        # Update selected row based on dropdown selection
+        if selected_prompt:
+            prompt_index = prompt_options.index(selected_prompt)
+            st.session_state.selected_row = start_idx + prompt_indices[prompt_index]
+
+        # Display detailed analysis for selected row
+        if st.session_state.selected_row is not None:
+            try:
+                selected_data = filtered_df.iloc[st.session_state.selected_row]
+                
+                with st.expander("Collpase/Expand", expanded=True):
+                    # Create columns for metrics
+                    col1, col2, col3 = st.columns(3)
+                    
+                    # Toxicity score with progress bar
+                    toxicity_score = selected_data['toxicity']
+                    toxicity_color = "red" if toxicity_score > 0.7 else "orange" if toxicity_score > 0.3 else "green"
+                    col1.markdown(f"**Toxicity Score**")
+                    col1.progress(toxicity_score, text=f"{toxicity_score:.2%}")
+                    col1.markdown(f"<span style='color: {toxicity_color}'>Risk Level: {'High' if toxicity_score > 0.7 else 'Medium' if toxicity_score > 0.3 else 'Low'}</span>", unsafe_allow_html=True)
+                    
+                    # Jailbreak status with explanation
+                    jailbreak_status = "🛑 JAILBREAK" if selected_data['is_jailbreak'] else "✅ SAFE"
+                    col2.markdown(f"**Status**")
+                    col2.markdown(f"<h2 style='text-align: center; color: {'red' if selected_data['is_jailbreak'] else 'green'}'> {jailbreak_status} </h2>", unsafe_allow_html=True)
+                    col2.markdown(f"<span style='color: {'red' if selected_data['is_jailbreak'] else 'green'}'>This prompt is {'likely a jailbreak attempt' if selected_data['is_jailbreak'] else 'considered safe'}</span>", unsafe_allow_html=True)
+                    
+                    # Sentiment with color coding
+                    sentiment_score = selected_data['sentiment']
+                    sentiment_color = "red" if sentiment_score < -0.3 else "green" if sentiment_score > 0.3 else "gray"
+                    sentiment_text = "Negative" if sentiment_score < -0.3 else "Positive" if sentiment_score > 0.3 else "Neutral"
+                    col3.markdown(f"**Sentiment**")
+                    col3.markdown(f"<h2 style='text-align: center; color: {sentiment_color}'> {sentiment_text} </h2>", unsafe_allow_html=True)
+                    col3.markdown(f"<span style='color: {sentiment_color}'>Score: {sentiment_score:.2f}</span>", unsafe_allow_html=True)
+                    
+                    st.divider()
+                    st.markdown("**Prompt Text**")
+                    st.text_area("", selected_data['text'], height=75, disabled=True)
+                    
+                    st.divider()
+                    st.markdown("**Analysis Explanation**")
+                    if 'analysis' in selected_data and selected_data['analysis']:
+                        # Split the explanation into parts
+                        explanation_parts = selected_data['analysis']['explanation'].split('\n\n')
+                        
+                        # Display the analysis part
+                        st.markdown(explanation_parts[0])
+                        
+                        # Display the response analysis part
+                        st.markdown(explanation_parts[1])
+                        
+                        st.divider()
+                        st.markdown("**Toxicity Analysis**")
+                        col1, col2, col3 = st.columns(3)
+                        
+                        # Get toxicity scores from the analysis details
+                        toxicity_scores = selected_data['analysis']['details']
+                        
+                        # First row of metrics
+                        with col1:
+                            toxicity = toxicity_scores.get('toxicity', 0)
+                            st.markdown("**Toxicity**")
+                            st.progress(toxicity, text=f"{toxicity:.2%}")
+                            
+                        with col2:
+                            severe_toxicity = toxicity_scores.get('severe_toxicity', 0)
+                            st.markdown("**Severe Toxicity**")
+                            st.progress(severe_toxicity, text=f"{severe_toxicity:.2%}")
+                            
+                        with col3:
+                            obscene = toxicity_scores.get('obscene', 0)
+                            st.markdown("**Obscene**")
+                            st.progress(obscene, text=f"{obscene:.2%}")
+                        
+                        # Second row of metrics
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            threat = toxicity_scores.get('threat', 0)
+                            st.markdown("**Threat**")
+                            st.progress(threat, text=f"{threat:.2%}")
+                            
+                        with col2:
+                            insult = toxicity_scores.get('insult', 0)
+                            st.markdown("**Insult**")
+                            st.progress(insult, text=f"{insult:.2%}")
+                            
+                        with col3:
+                            identity_attack = toxicity_scores.get('identity_attack', 0)
+                            st.markdown("**Identity Attack**")
+                            st.progress(identity_attack, text=f"{identity_attack:.2%}")
+                        
+                        # Display the final assessment if it exists
+                        if len(explanation_parts) > 2:
+                            st.markdown(explanation_parts[2])
+                    else:
+                        st.warning("No analysis explanation available for this prompt.")
+            except IndexError:
+                st.session_state.selected_row = None
+                st.warning("Selected row is no longer available. Please select a different row.")
+
+    st.divider()
+
+    ### --- Summary Panel ---
+    st.markdown("## Summary Panel")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    col1.metric("Total Prompts", total_prompts)
+    col2.metric("% Jailbreaks", f"{percent_jailbreaks:.2f}%")
+    col3.metric("Avg Toxicity", f"{avg_toxicity:.2f}")
+
+# --- Charts Tab ---
+with tab3:
+    st.header("Analysis Charts")
+
+    st.divider()
 
     # Safe vs Jailbreak Chart
-    st.subheader("Safe vs Jailbreak")
+    
     counts = df['is_jailbreak'].value_counts()
-    st.bar_chart(counts)
+    fig = px.bar(
+        x=counts.index,
+        y=counts.values,
+        title='Safe vs Jailbreak'
+    )
+    fig.update_layout(
+        paper_bgcolor='#FFF3D7',
+        plot_bgcolor='#FFF3D7',
+        font_color='black'
+    )
+    st.plotly_chart(fig)
+
+    st.divider()
 
     # --- Sentiment Distribution ---
-    st.subheader("📊 Sentiment Distribution")
 
     sentiment_chart_type = st.selectbox(
         "Select Sentiment Chart Type",
@@ -311,20 +852,42 @@ with tab2:
     sentiment_counts = df['sentiment_category'].value_counts()
 
     if sentiment_chart_type == "Bar Chart":
-        st.bar_chart(sentiment_counts)
+        fig = px.bar(
+            x=sentiment_counts.index,
+            y=sentiment_counts.values,
+            title='Sentiment Split'
+        )
+        fig.update_layout(
+            paper_bgcolor='#FFF3D7',
+            plot_bgcolor='#FFF3D7',
+            font_color='black'
+        )
+        st.plotly_chart(fig)
     elif sentiment_chart_type == "Pie Chart":
         fig = px.pie(
             names=sentiment_counts.index,
             values=sentiment_counts.values,
             title='Sentiment Split'
         )
+        fig.update_layout(
+            paper_bgcolor='#FFF3D7',
+            plot_bgcolor='#FFF3D7',
+            font_color='black'
+        )
         st.plotly_chart(fig)
 
+    st.divider()
     # Detoxify Score Distribution
     if 'toxicity' in df.columns:
-        st.subheader("Detoxify Score Distributions")
-        st.line_chart(df[['toxicity', 'threat', 'insult']])
-
+        
+        fig = px.line(df[['toxicity', 'threat', 'insult']], title='Detoxify Score Distributions')
+        fig.update_layout(
+            paper_bgcolor='#FFF3D7',
+            plot_bgcolor='#FFF3D7',
+            font_color='black'
+        )
+        st.plotly_chart(fig)
+    st.divider()
    # --- Moving Average of Toxicity over Time ---
     if not filtered_df.empty:
         scores_df = filtered_df[['datetime', 'toxicity']].copy()
@@ -335,25 +898,60 @@ with tab2:
             scores_df = scores_df.sort_values('datetime')
             scores_df['toxicity_ma'] = scores_df['toxicity'].rolling(window=10, min_periods=1).mean()
 
-            st.subheader("📈 Toxicity Moving Average Over Time")
             fig = px.line(scores_df, x='datetime', y='toxicity_ma', title='Toxicity Moving Average')
+            fig.update_layout(
+                paper_bgcolor='#FFF3D7',
+                plot_bgcolor='#FFF3D7',
+                font_color='black'
+            )
             st.plotly_chart(fig)
         else:
             st.warning("No toxicity data available for the current filter selection.")
     else:
         st.warning("No data available to plot toxicity moving average.")
 
+    st.divider()
 
-with tab3:
+    ### --- Summary Panel ---
+    st.markdown("## Summary Panel")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    col1.metric("Total Prompts", total_prompts)
+    col2.metric("% Jailbreaks", f"{percent_jailbreaks:.2f}%")
+    col3.metric("Avg Toxicity", f"{avg_toxicity:.2f}")
+
+# --- Settings Tab ---
+with tab4:
     st.header("⚙️ Settings")
     st.write("Adjust filters, refresh rates, and preferences using the sidebar.")
 
-    st.download_button(
-        label="Download Filtered Results as CSV",
-        data=filtered_df.to_csv(index=False).encode('utf-8'),
-        file_name='filtered_jailbreaks.csv',
-        mime='text/csv',
-        key='download_button_filtered'
-    )
+    # Create a row for the buttons with custom spacing
+    col1, col2 = st.columns([0.6, 0.4])
+    
+    with col1:
+        # Download button
+        st.download_button(
+            label="Download Filtered Results as CSV",
+            data=filtered_df.to_csv(index=False).encode('utf-8'),
+            file_name='filtered_jailbreaks.csv',
+            mime='text/csv',
+            key='download_button_filtered'
+        )
+
+    with col2:
+        # Clear Memory button with red styling
+        if st.button("⛔ Clear Memory", help="Click to clear all conversation history", 
+                    type="primary", 
+                    use_container_width=True):
+            try:
+                import subprocess
+                subprocess.run(["python", "clear_history.py"], check=True)
+                st.success("Memory cleared successfully!")
+                st.rerun()
+            except subprocess.CalledProcessError as e:
+                st.error(f"Error clearing memory: {str(e)}")
+            except Exception as e:
+                st.error(f"An unexpected error occurred: {str(e)}")
 
 
