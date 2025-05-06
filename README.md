@@ -26,12 +26,14 @@ A "jailbreak" in AI terms refers to attempts to bypass or override an AI system'
 ### Installation
 
 1. Get the Code:
+
    ```bash
    git clone https://github.com/muralikrish9/POIsim.git
    cd POIsim
    ```
 
 2. Set Up Python Environment:
+
    ```bash
    # On Windows:
    python -m venv venv
@@ -43,12 +45,14 @@ A "jailbreak" in AI terms refers to attempts to bypass or override an AI system'
    ```
 
 3. Install Required Packages:
+
    ```bash
    pip install -r requirements.txt
    ```
 
 4. Set Up Your API Key:
    Create `.env` file with:
+
    ```
    GOOGLE_API_KEY=your_google_api_key_here
    ```
@@ -61,6 +65,7 @@ A "jailbreak" in AI terms refers to attempts to bypass or override an AI system'
 ### Running the System
 
 1. Start the Program:
+
    ```bash
    python test_jailbreak.py
    ```
@@ -68,6 +73,14 @@ A "jailbreak" in AI terms refers to attempts to bypass or override an AI system'
 2. Using the System:
    - Type or paste your text when prompted
    - Type 'quit' to exit
+
+### Deploying the dashboard
+
+1. install streamlit:
+   pip install streamlit
+
+2. deploy dashboard:
+   streamlit run streamlit_app.py
 
 ## Project Structure
 
@@ -93,4 +106,4 @@ MIT License
 
 - Google AI
 - Hugging Face
-- Open-source community 
+- Open-source community
