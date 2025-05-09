@@ -24,3 +24,4 @@ plotly
 textblob  
 detoxify
 streamlit
+psutil
