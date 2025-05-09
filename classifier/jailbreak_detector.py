@@ -164,8 +164,22 @@ class AnalysisResult:
 
     @classmethod
     def from_dict(cls, data):
-        """Create AnalysisResult from dictionary"""
-        data['nature'] = PromptNature[data['nature']]
+        """Create AnalysisResult from dictionary handling missing fields"""
+        # Provide defaults for any missing optional fields
+        defaults = {
+            'explanation': "",
+            'tokens': {},
+            'model_response': "",
+            'context_score': 0.0,
+            'sentiment_score': 0.0,
+            'manipulation_score': 0.0,
+            'deception_score': 0.0,
+            'toxicity_score': 0.0
+        }
+        for key, val in defaults.items():
+            if key not in data:
+                data[key] = val
+        data['nature'] = PromptNature[data['nature']] if isinstance(data['nature'], str) else data['nature']
         return cls(**data)
 
 @dataclass
@@ -577,7 +591,7 @@ class AnalysisLogger:
             
             # Save updated data
             with open(self.training_data_file, 'w') as f:
-                json.dump(existing_data, f, indent=2)
+                json.dump(existing_data, f, indent=2, default=_convert_np)
             
             logging.info(f"Logged analysis data for: {text[:50]}...")
             
@@ -603,6 +617,15 @@ class AnalysisLogger:
                 logging.info("Cleared training data")
         except Exception as e:
             logging.error(f"Error clearing training data: {e}")
+
+# Helper to convert numpy types to JSON-serializable Python types
+def _convert_np(obj):
+    """Convert NumPy types to native Python types for JSON serialization"""
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 class JailbreakDetector:
     """Enhanced jailbreak detection with nature analysis and conversation memory"""
@@ -775,7 +798,8 @@ class JailbreakDetector:
                 json.dump(
                     [msg.to_dict() for msg in self.conversation_history],
                     f,
-                    indent=2
+                    indent=2,
+                    default=_convert_np
                 )
             logging.info(f"Saved {len(self.conversation_history)} messages to history")
         except Exception as e:
@@ -1531,7 +1555,7 @@ class JailbreakDetector:
             
             # Save to file
             with open(output_file, 'w') as f:
-                json.dump(bert_data, f, indent=2)
+                json.dump(bert_data, f, indent=2, default=_convert_np)
             
             logging.info(f"Exported {len(bert_data)} training examples to {output_file}")
             return True
