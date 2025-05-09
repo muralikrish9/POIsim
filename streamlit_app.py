@@ -25,6 +25,77 @@ st.markdown("""
         background-color: #FFF3D7;
     }
     
+    /* Loading animation */
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .loading {
+        display: inline-block;
+        width: 50px;
+        height: 50px;
+        border: 3px solid #f3f3f3;
+        border-radius: 50%;
+        border-top: 3px solid #6C63FF;
+        animation: spin 1s linear infinite;
+    }
+    
+    /* Smooth transitions for all elements */
+    * {
+        transition: all 0.3s ease-in-out;
+    }
+    
+    /* Hover effects for cards and containers */
+    .stMetric:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    
+    /* Progress bar animation */
+    .stProgress > div > div {
+        transition: width 0.5s ease-in-out;
+    }
+    
+    /* Text area animations */
+    .stTextArea textarea {
+        transition: all 0.3s ease;
+    }
+    
+    .stTextArea textarea:focus {
+        transform: scale(1.01);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    
+    /* Button hover effects */
+    .stButton > button {
+        transition: all 0.3s ease;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    
+    /* Tab animations */
+    .stTabs [data-baseweb="tab"] {
+        transition: all 0.3s ease;
+    }
+    
+    .stTabs [data-baseweb="tab"]:hover {
+        transform: translateY(-2px);
+    }
+    
+    /* Fade in animation for content */
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .element-container {
+        animation: fadeIn 0.5s ease-out;
+    }
+    
     /* Status bar and header styling */
     .stStatusWidget {
         background-color: #FFF3D7 !important;
@@ -163,7 +234,6 @@ st.markdown("""
         background-color: #FFF3D7;
         display: flex;
         align-items: center;
-        
     }
     
     .logo-container {
@@ -272,8 +342,6 @@ st.markdown("""
         border: 0px solid #E9ECEF !important;
         padding: 0.5rem !important;
     }
-    
-    
     
     /* Button styling */
     .stButton > button {
@@ -397,12 +465,14 @@ def color_detoxify(val):
     Red for high toxicity
     """
     if isinstance(val, (float, int)):
-        if val < 0.3:
-            color = 'background-color: rgba(0, 255, 0, 0.2)'  # Green
-        elif val < 0.7:
-            color = 'background-color: rgba(255, 255, 0, 0.3)'  # Yellow
+        # Clamp value between 0 and 1
+        v = max(0, min(val, 1))
+        if v < 0.3:
+            color = 'background-color: #d4f8e8'  # Light green
+        elif v < 0.7:
+            color = 'background-color: #fff3cd'  # Light yellow
         else:
-            color = 'background-color: rgba(255, 0, 0, 0.3)'    # Red
+            color = 'background-color: #f8d7da'  # Light red
         return color
     else:
         return ''
@@ -417,17 +487,20 @@ DEFAULT_INSULT = 0.0
 # --------------------------------------------------------
 
 # Title with logo
-st.markdown('<div class="logo-title-container">', unsafe_allow_html=True)
+st.markdown('<div class="logo-title-container" style="margin-bottom: 0.5rem; margin-top: 0.2rem;">', unsafe_allow_html=True)
 col1, col2 = st.columns([1, 4])
 with col1:
-    st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-    st.image(logo, width=600)
+    st.markdown('<div class="logo-container" style="margin-top: 0.2rem;">', unsafe_allow_html=True)
+    st.image(logo, width=120)
     st.markdown('</div>', unsafe_allow_html=True)
 with col2:
-    st.markdown('<div class="title-container">', unsafe_allow_html=True)
-    st.title("Jailbreak Detection Dashboard")
+    st.markdown('<div class="title-container" style="margin-top: 0.7rem;">', unsafe_allow_html=True)
+    st.markdown('<h1 style="font-size:1.7rem; font-weight:700; color:#2a2a3b; margin-bottom:0.2rem; font-family:Segoe UI,Arial,sans-serif; letter-spacing:-1px;">Jailbreak Detection Dashboard</h1>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
+
+# --- Glassmorphism style for all major boxes ---
+glass_style = "background: rgba(220,230,255,0.22); border-radius: 18px; box-shadow: 0 4px 24px rgba(60,60,120,0.10); padding: 1.1rem 1.1rem 0.9rem 1.1rem; margin-bottom: 1.1rem; border: 1.5px solid rgba(255,255,255,0.25); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);"
 
 ### SIDEBAR ----------------------------------------------
 
@@ -538,104 +611,115 @@ with tab1:
         submitted = st.form_submit_button("Analyze Prompt")
         
         if submitted and prompt:
-            # Initialize detector
-            from classifier.jailbreak_detector import JailbreakDetector
-            detector = JailbreakDetector()
-            
-            # Analyze the prompt
-            result = detector.predict(prompt)
+            # Show loading animation
+            with st.spinner('Loading models and analyzing prompt...'):
+                # Initialize detector
+                from classifier.jailbreak_detector import JailbreakDetector
+                detector = JailbreakDetector()
+                
+                # Analyze the prompt
+                result = detector.predict(prompt)
             
             # Display results
             st.subheader("Analysis Results")
-            
-            # Create columns for metrics
+
+            # --- Model Response Box ---
+            model_response_html = result.model_response.replace('\n', '<br>')
+            st.markdown(f"""
+            <div style='{glass_style}'>
+                <h4 style='margin-top:0; margin-bottom: 0.4rem; color: #5A4FFF; font-weight: 700; font-size: 1.08rem; font-family: Segoe UI, Arial, sans-serif;'>Model Response</h4>
+                <div style='color: #232336; font-size: 1.01rem; font-family: Segoe UI, Arial, sans-serif; line-height: 1.6;'>
+                    {model_response_html}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # --- Metrics Section ---
+            st.markdown("<div style='margin-bottom: 2rem;'></div>", unsafe_allow_html=True)
             col1, col2, col3 = st.columns(3)
-            
+
             # Toxicity score with progress bar
             toxicity_score = result.details['toxicity_score']
-            toxicity_color = "red" if toxicity_score > 0.7 else "orange" if toxicity_score > 0.3 else "green"
+            toxicity_color = "#FF4B4B" if toxicity_score > 0.7 else "#FFA500" if toxicity_score > 0.3 else "#00CC00"
             col1.markdown(f"**Toxicity Score**")
             col1.progress(toxicity_score, text=f"{toxicity_score:.2%}")
-            col1.markdown(f"<span style='color: {toxicity_color}'>Risk Level: {'High' if toxicity_score > 0.7 else 'Medium' if toxicity_score > 0.3 else 'Low'}</span>", unsafe_allow_html=True)
-            
+            col1.markdown(f"<span style='color: {toxicity_color}; font-weight:600;'>Risk Level: {'High' if toxicity_score > 0.7 else 'Medium' if toxicity_score > 0.3 else 'Low'}</span>", unsafe_allow_html=True)
+
             # Jailbreak status with explanation
             jailbreak_status = "🛑 JAILBREAK" if result.score > 0.7 else "✅ SAFE"
             col2.markdown(f"**Status**")
-            col2.markdown(f"<h2 style='text-align: center; color: {'red' if result.score > 0.7 else 'green'}'> {jailbreak_status} </h2>", unsafe_allow_html=True)
-            col2.markdown(f"<span style='color: {'red' if result.score > 0.7 else 'green'}'>This prompt is {'likely a jailbreak attempt' if result.score > 0.7 else 'considered safe'}</span>", unsafe_allow_html=True)
-            
+            col2.markdown(f"<h2 style='text-align: center; color: {'#FF4B4B' if result.score > 0.7 else '#00CC00'}; font-weight: 700;'> {jailbreak_status} </h2>", unsafe_allow_html=True)
+            col2.markdown(f"<span style='color: {'#FF4B4B' if result.score > 0.7 else '#00CC00'}; font-weight:600;'>This prompt is {'likely a jailbreak attempt' if result.score > 0.7 else 'considered safe'}</span>", unsafe_allow_html=True)
+
             # Sentiment with color coding
             sentiment_score = result.details['sentiment_score']
-            sentiment_color = "red" if sentiment_score < -0.3 else "green" if sentiment_score > 0.3 else "gray"
+            sentiment_color = "#FF4B4B" if sentiment_score < -0.3 else "#00CC00" if sentiment_score > 0.3 else "#808080"
             sentiment_text = "Negative" if sentiment_score < -0.3 else "Positive" if sentiment_score > 0.3 else "Neutral"
             col3.markdown(f"**Sentiment**")
-            col3.markdown(f"<h2 style='text-align: center; color: {sentiment_color}'> {sentiment_text} </h2>", unsafe_allow_html=True)
-            col3.markdown(f"<span style='color: {sentiment_color}'>Score: {sentiment_score:.2f}</span>", unsafe_allow_html=True)
-            
-            # Display the prompt text
-            st.divider()
-            st.markdown("**Prompt Text**")
-            st.text_area("", prompt, height=75, disabled=True)
-            
-            # Display detailed analysis
-            st.divider()
-            st.markdown("**Analysis Explanation**")
-            
-            # Split the explanation into parts
-            explanation_parts = result.explanation.split('\n\n')
-            
-            # Display the analysis part
-            st.markdown(explanation_parts[0])
-            
-            # Display the response analysis part
-            st.markdown(explanation_parts[1])
-            
+            col3.markdown(f"<h2 style='text-align: center; color: {sentiment_color}; font-weight: 700;'> {sentiment_text} </h2>", unsafe_allow_html=True)
+            col3.markdown(f"<span style='color: {sentiment_color}; font-weight:600;'>Score: {sentiment_score:.2f}</span>", unsafe_allow_html=True)
+
+            # --- Prompt Text Box ---
+            prompt_html = prompt.replace('\n', '<br>')
+            st.markdown(f"""
+            <div style='{glass_style}'>
+                <h4 style='margin-top:0; margin-bottom: 0.4rem; color: #5A4FFF; font-weight: 700; font-size: 1.08rem; font-family: Segoe UI, Arial, sans-serif;'>Prompt Text</h4>
+                <div style='color: #232336; font-size: 1.01rem; font-family: Segoe UI, Arial, sans-serif; line-height: 1.6;'>
+                    {prompt_html}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # --- Analysis Explanation (glass style) ---
+            explanation = result.explanation
+            explanation_parts = explanation.split('\n\n')
+            part0 = explanation_parts[0] if len(explanation_parts) > 0 else ""
+            part1 = explanation_parts[1] if len(explanation_parts) > 1 else ""
+            st.markdown(
+                f"""
+                <div style='{glass_style}'>
+                    <h4 style='margin-top:0; margin-bottom: 0.4rem; color: #5A4FFF; font-weight: 700; font-size: 1.08rem; font-family: Segoe UI, Arial, sans-serif;'>Analysis Explanation</h4>
+                    <div style='color: #232336; font-size: 1.01rem; font-family: Segoe UI, Arial, sans-serif; line-height: 1.6;'>
+                        {part0}<br>{part1}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            # --- Reduce vertical spacing between sections ---
+            st.markdown("<div style='margin-bottom: 0.7rem;'></div>", unsafe_allow_html=True)
+
             st.divider()
             st.markdown("**Toxicity Analysis**")
             col1, col2, col3 = st.columns(3)
-            
-            # Get toxicity scores from the result details
             toxicity_scores = result.details
-            
-            # First row of metrics
             with col1:
                 toxicity = toxicity_scores.get('toxicity', 0)
                 st.markdown("**Toxicity**")
                 st.progress(toxicity, text=f"{toxicity:.2%}")
-                
             with col2:
                 severe_toxicity = toxicity_scores.get('severe_toxicity', 0)
                 st.markdown("**Severe Toxicity**")
                 st.progress(severe_toxicity, text=f"{severe_toxicity:.2%}")
-                
             with col3:
                 obscene = toxicity_scores.get('obscene', 0)
                 st.markdown("**Obscene**")
                 st.progress(obscene, text=f"{obscene:.2%}")
-            
-            # Second row of metrics
             col1, col2, col3 = st.columns(3)
-            
             with col1:
                 threat = toxicity_scores.get('threat', 0)
                 st.markdown("**Threat**")
                 st.progress(threat, text=f"{threat:.2%}")
-                
             with col2:
                 insult = toxicity_scores.get('insult', 0)
                 st.markdown("**Insult**")
                 st.progress(insult, text=f"{insult:.2%}")
-                
             with col3:
                 identity_attack = toxicity_scores.get('identity_attack', 0)
                 st.markdown("**Identity Attack**")
                 st.progress(identity_attack, text=f"{identity_attack:.2%}")
-            
-            # Display the final assessment if it exists
             if len(explanation_parts) > 2:
-                st.markdown(explanation_parts[2])
-            
-            # Add a divider
+                part2 = explanation_parts[2]
+                st.markdown(part2)
             st.divider()
 
 # --- Browse Tab ---
@@ -801,7 +885,8 @@ with tab2:
                         
                         # Display the final assessment if it exists
                         if len(explanation_parts) > 2:
-                            st.markdown(explanation_parts[2])
+                            part2 = explanation_parts[2]
+                            st.markdown(part2)
                     else:
                         st.warning("No analysis explanation available for this prompt.")
             except IndexError:
