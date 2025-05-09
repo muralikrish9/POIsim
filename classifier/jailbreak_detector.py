@@ -120,6 +120,14 @@ class ModelResponseState(Enum):
     EVASIVE = auto()
     COMPROMISED = auto()
 
+class JailbreakStatus(Enum):
+    SAFE = auto()
+    SUSPICIOUS = auto()
+    JAILBREAK_ATTEMPT = auto()
+    CONFIRMED_JAILBREAK = auto()
+    HARMFUL_CONTENT = auto()
+    MULTI_STEP_ATTEMPT = auto()
+
 @dataclass
 class AnalysisResult:
     """Result of analyzing a prompt"""
@@ -208,6 +216,50 @@ class ResponseAnalysis:
         self.confidence = float(self.confidence)
         self.details = {k: float(v) if isinstance(v, (np.float32, np.float64)) else v 
                        for k, v in self.details.items()}
+
+@dataclass
+class StatusReport:
+    """Detailed status report for jailbreak detection"""
+    status: JailbreakStatus
+    confidence: float
+    categories: List[str]
+    risk_level: str
+    details: Dict[str, Any]
+    mitigation_advice: str
+
+    def to_dict(self):
+        return {
+            'status': self.status.name,
+            'confidence': self.confidence,
+            'categories': self.categories,
+            'risk_level': self.risk_level,
+            'details': self.details,
+            'mitigation_advice': self.mitigation_advice
+        }
+
+    def get_status_emoji(self) -> str:
+        """Get appropriate emoji for the status"""
+        emoji_map = {
+            JailbreakStatus.SAFE: "✅",
+            JailbreakStatus.SUSPICIOUS: "⚠️",
+            JailbreakStatus.JAILBREAK_ATTEMPT: "🛑",
+            JailbreakStatus.CONFIRMED_JAILBREAK: "🚫",
+            JailbreakStatus.HARMFUL_CONTENT: "⛔",
+            JailbreakStatus.MULTI_STEP_ATTEMPT: "⚠️"
+        }
+        return emoji_map.get(self.status, "❓")
+
+    def get_status_text(self) -> str:
+        """Get formatted status text with confidence"""
+        base_text = {
+            JailbreakStatus.SAFE: "SAFE",
+            JailbreakStatus.SUSPICIOUS: "SUSPICIOUS",
+            JailbreakStatus.JAILBREAK_ATTEMPT: "JAILBREAK ATTEMPT",
+            JailbreakStatus.CONFIRMED_JAILBREAK: "CONFIRMED JAILBREAK",
+            JailbreakStatus.HARMFUL_CONTENT: "HARMFUL CONTENT",
+            JailbreakStatus.MULTI_STEP_ATTEMPT: "MULTI-STEP JAILBREAK"
+        }
+        return f"{self.get_status_emoji()} {base_text.get(self.status, 'UNKNOWN')} ({self.confidence:.0%} confidence)"
 
 class ResponseAnalyzer:
     """Analyzes model responses to detect compromised or harmful behavior"""
@@ -574,8 +626,8 @@ class JailbreakDetector:
             self.device = device
             
         # Initialize models
-        self.sentiment_model = sentiment_model
-        self.bert_tokenizer = bert_tokenizer
+        self.sentiment_analyzer = sentiment_model
+        self.tokenizer = bert_tokenizer
         self.bert_model = bert_model
         self.detoxify_model = detoxify_model
         
@@ -964,7 +1016,7 @@ class JailbreakDetector:
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
             
             with torch.no_grad():
-                outputs = self.model(**inputs)
+                outputs = self.bert_model(**inputs)
                 embeddings = outputs.last_hidden_state.mean(dim=1).cpu().numpy()
                 return float(np.mean(embeddings))
                 
@@ -985,17 +1037,107 @@ class JailbreakDetector:
             return "Error generating response"
 
     def _analyze_sentiment(self, text: str) -> float:
-        """Analyze sentiment of the text"""
-        try:
-            result = self.sentiment_analyzer(text)[0]
-            # Convert sentiment score to -1 to 1 range
-            if result['label'] == 'POSITIVE':
-                return result['score']
-            else:
-                return -result['score']
-        except Exception as e:
-            logging.error(f"Error in sentiment analysis: {e}")
+        """
+        Analyze sentiment of text using multiple approaches and combine results.
+        Returns a score between -1 (negative) and 1 (positive).
+        """
+        if not text or not isinstance(text, str):
             return 0.0
+
+        # Handle very short texts and greetings first
+        text_lower = text.lower().strip()
+        words = text_lower.split()
+        
+        # Special handling for greetings and simple messages
+        greeting_patterns = [
+            r'^hi\b', r'^hello\b', r'^hey\b', r'^greetings\b',
+            r'^good\s+(morning|afternoon|evening)\b',
+            r'^how\s+are\s+you\b', r'^how\s+do\s+you\s+do\b'
+        ]
+        
+        if len(words) <= 3:  # Very short text
+            # Check for greetings
+            if any(re.match(pattern, text_lower) for pattern in greeting_patterns):
+                return 0.3  # Slightly positive for greetings
+            
+            # Check for simple responses
+            if any(term in text_lower for term in ['yes', 'ok', 'sure', 'fine', 'good', 'great']):
+                return 0.3  # Slightly positive for affirmative responses
+            elif any(term in text_lower for term in ['no', 'stop', 'quit', 'bad', 'wrong']):
+                return -0.3  # Slightly negative for negative responses
+            else:
+                return 0.0  # Neutral for other short texts
+
+        # Initialize sentiment scores
+        sentiment_scores = []
+        
+        # 1. Use DistilBERT for initial sentiment
+        try:
+            if self.sentiment_analyzer:
+                result = self.sentiment_analyzer(text)
+                if result and len(result) > 0:
+                    # Convert label to score
+                    label = result[0]['label']
+                    score = result[0]['score']
+                    sentiment_score = score if label == 'POSITIVE' else -score
+                    sentiment_scores.append(sentiment_score)
+        except Exception as e:
+            print(f"Error in DistilBERT sentiment analysis: {str(e)}")
+
+        # 2. Use TextBlob as backup
+        try:
+            blob = TextBlob(text)
+            # Get both polarity and subjectivity
+            polarity = blob.sentiment.polarity
+            subjectivity = blob.sentiment.subjectivity
+            
+            # Adjust score based on subjectivity
+            if subjectivity > 0.5:  # High subjectivity
+                sentiment_scores.append(polarity * 0.8)  # Reduce impact of highly subjective text
+            else:
+                sentiment_scores.append(polarity)
+        except Exception as e:
+            print(f"Error in TextBlob sentiment analysis: {str(e)}")
+
+        # 3. Pattern matching for harmful content
+        harmful_patterns = {
+            'negative_emotions': ['angry', 'hate', 'disgust', 'fear', 'sad', 'upset'],
+            'harmful_intent': ['harm', 'hurt', 'kill', 'attack', 'destroy', 'illegal'],
+            'bypass_attempts': ['ignore', 'bypass', 'circumvent', 'override', 'hack']
+        }
+        
+        pattern_score = 0
+        for category, patterns in harmful_patterns.items():
+            for pattern in patterns:
+                if pattern in text_lower:
+                    pattern_score -= 0.2  # Negative impact for each match
+        
+        # 4. Context analysis
+        context_terms = {
+            'jailbreak': ['jailbreak', 'bypass', 'hack', 'exploit'],
+            'harmful': ['harm', 'danger', 'illegal', 'criminal'],
+            'manipulation': ['trick', 'deceive', 'manipulate', 'fool']
+        }
+        
+        context_score = 0
+        for category, terms in context_terms.items():
+            for term in terms:
+                if term in text_lower:
+                    context_score -= 0.15  # Negative impact for each match
+
+        # Combine all scores
+        if sentiment_scores:
+            final_score = sum(sentiment_scores) / len(sentiment_scores)
+        else:
+            final_score = 0.0
+
+        # Adjust final score based on patterns and context
+        final_score += pattern_score + context_score
+
+        # Normalize to [-1, 1] range
+        final_score = max(-1.0, min(1.0, final_score))
+
+        return final_score
 
     def _extract_entities(self, text: str) -> List[Dict]:
         """Extract named entities from text"""
@@ -1167,6 +1309,18 @@ class JailbreakDetector:
         manipulation_score = self._analyze_manipulation(text)
         deception_score = self._analyze_deception(text)
         
+        # Determine status and confidence
+        status_report = self._determine_status(
+            text=text,
+            toxicity_score=toxicity_score,
+            nature=nature,
+            nature_scores=nature_scores,
+            context_score=context_score,
+            manipulation_score=manipulation_score,
+            deception_score=deception_score,
+            response_analysis=response_analysis
+        )
+        
         # Update nature if toxicity is high
         if toxicity_score > 0.7:
             nature = PromptNature.TOXIC
@@ -1200,6 +1354,7 @@ class JailbreakDetector:
                 'deception_score': deception_score,
                 'sentiment_score': new_message.sentiment,
                 'toxicity_score': toxicity_score,
+                'status_report': status_report.to_dict(),
                 'response_analysis': {
                     'state': response_analysis.state.name,
                     'confidence': response_analysis.confidence,
@@ -1230,6 +1385,132 @@ class JailbreakDetector:
         self.logger.log_analysis(text, result, context)
         
         return result
+
+    def _determine_status(self, 
+                         text: str,
+                         toxicity_score: float,
+                         nature: PromptNature,
+                         nature_scores: Dict[PromptNature, float],
+                         context_score: float,
+                         manipulation_score: float,
+                         deception_score: float,
+                         response_analysis: ResponseAnalysis) -> StatusReport:
+        """Determine detailed status of the prompt"""
+        
+        # Initialize categories and confidence
+        categories = []
+        confidence = 0.0
+        
+        # Check if text is too short or simple to be a jailbreak attempt
+        words = text.split()
+        if len(words) < 3 and not any(len(word) > 8 for word in words):
+            # For very short messages, require multiple strong indicators
+            if (toxicity_score > 0.7 and 
+                (manipulation_score > 0.7 or deception_score > 0.7)):
+                categories.append("Harmful content")
+                confidence += 0.3
+            return StatusReport(
+                status=JailbreakStatus.SAFE,
+                confidence=0.0,
+                categories=[],
+                risk_level="Low",
+                details={
+                    'toxicity_score': toxicity_score,
+                    'context_score': context_score,
+                    'manipulation_score': manipulation_score,
+                    'deception_score': deception_score,
+                    'nature_scores': {k.name: v for k, v in nature_scores.items()}
+                },
+                mitigation_advice="No specific mitigation required"
+            )
+        
+        # Check for multi-step attempts
+        if context_score > 0.7:  # Increased threshold
+            categories.append("Multi-step attempt")
+            confidence += 0.3
+        
+        # Check for harmful content with higher threshold
+        if toxicity_score > 0.5:  # Increased threshold
+            categories.append("Harmful content")
+            confidence += 0.2
+        
+        # Check for manipulation with higher threshold
+        if manipulation_score > 0.7:  # Increased threshold
+            categories.append("Manipulation attempt")
+            confidence += 0.2
+        
+        # Check for deception with higher threshold
+        if deception_score > 0.7:  # Increased threshold
+            categories.append("Deception attempt")
+            confidence += 0.2
+        
+        # Check nature scores with higher threshold
+        for nature_type, score in nature_scores.items():
+            if score > 0.7:  # Increased threshold
+                categories.append(nature_type.name.lower())
+                confidence += 0.1
+        
+        # Determine risk level with adjusted thresholds
+        if confidence > 0.8:  # Increased threshold
+            risk_level = "High"
+        elif confidence > 0.5:  # Increased threshold
+            risk_level = "Medium"
+        else:
+            risk_level = "Low"
+        
+        # Determine status with adjusted thresholds
+        if confidence > 0.9:  # Increased threshold
+            status = JailbreakStatus.CONFIRMED_JAILBREAK
+        elif confidence > 0.7:  # Increased threshold
+            status = JailbreakStatus.JAILBREAK_ATTEMPT
+        elif confidence > 0.5:  # Increased threshold
+            status = JailbreakStatus.SUSPICIOUS
+        elif toxicity_score > 0.8:  # Increased threshold
+            status = JailbreakStatus.HARMFUL_CONTENT
+        elif context_score > 0.7:  # Increased threshold
+            status = JailbreakStatus.MULTI_STEP_ATTEMPT
+        else:
+            status = JailbreakStatus.SAFE
+        
+        # Generate mitigation advice
+        mitigation_advice = self._generate_mitigation_advice(status, categories)
+        
+        return StatusReport(
+            status=status,
+            confidence=min(1.0, confidence),
+            categories=categories,
+            risk_level=risk_level,
+            details={
+                'toxicity_score': toxicity_score,
+                'context_score': context_score,
+                'manipulation_score': manipulation_score,
+                'deception_score': deception_score,
+                'nature_scores': {k.name: v for k, v in nature_scores.items()}
+            },
+            mitigation_advice=mitigation_advice
+        )
+
+    def _generate_mitigation_advice(self, status: JailbreakStatus, categories: List[str]) -> str:
+        """Generate specific mitigation advice based on status and categories"""
+        advice = []
+        
+        if status == JailbreakStatus.CONFIRMED_JAILBREAK:
+            advice.append("Immediate action required: Block and report this attempt")
+        elif status == JailbreakStatus.JAILBREAK_ATTEMPT:
+            advice.append("Strong warning: This is a clear jailbreak attempt")
+        elif status == JailbreakStatus.SUSPICIOUS:
+            advice.append("Caution: Monitor for further suspicious activity")
+        
+        if "Multi-step attempt" in categories:
+            advice.append("Watch for follow-up messages in this conversation")
+        if "Harmful content" in categories:
+            advice.append("Content contains harmful elements - review safety guidelines")
+        if "Manipulation attempt" in categories:
+            advice.append("Be aware of potential manipulation tactics")
+        if "Deception attempt" in categories:
+            advice.append("Verify authenticity of requests")
+        
+        return "\n".join(advice) if advice else "No specific mitigation required"
 
     def export_training_data(self, output_file: str = "bert_training_data.json"):
         """Export training data in BERT-friendly format"""

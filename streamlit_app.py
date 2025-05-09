@@ -4,8 +4,9 @@ import json
 import glob
 import plotly.express as px
 import time
-import datetime
+from datetime import datetime
 from PIL import Image
+import re
 
 # Set page config with logo
 st.set_page_config(
@@ -384,28 +385,223 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+def load_conversation_history():
+    """Load conversation history from JSON files"""
+    try:
+        # Find all conversation history files
+        history_files = glob.glob("conversation_history.json")
+        if not history_files:
+            return pd.DataFrame()
+
+        all_records = []
+        for file_path in history_files:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    
+                    # Handle empty content
+                    if not content:
+                        continue
+                    
+                    # Clean up the content
+                    content = content.strip()
+                    
+                    # Handle common JSON format issues
+                    if not content.startswith('[') and not content.startswith('{'):
+                        content = '[' + content + ']'
+                    elif content.startswith('{') and not content.startswith('[{'): 
+                        content = '[' + content + ']'
+                    
+                    # Remove trailing commas
+                    content = re.sub(r',\s*}', '}', content)
+                    content = re.sub(r',\s*]', ']', content)
+                    
+                    try:
+                        # Try to parse as JSON
+                        data = json.loads(content)
+                        
+                        # Handle both single objects and arrays
+                        if isinstance(data, dict):
+                            data = [data]
+                        elif isinstance(data, list):
+                            data = data
+                        else:
+                            continue
+                            
+                        all_records.extend(data)
+                        
+                    except json.JSONDecodeError:
+                        # If JSON parsing fails, try line by line
+                        records = []
+                        for line in content.split('\n'):
+                            line = line.strip()
+                            if not line or line in ['[', ']', '{', '}']:
+                                continue
+                                
+                            # Clean up the line
+                            line = re.sub(r',\s*$', '', line)
+                            if not line.startswith('{'):
+                                continue
+                                
+                            try:
+                                record = json.loads(line)
+                                records.append(record)
+                            except json.JSONDecodeError:
+                                continue
+                                
+                        all_records.extend(records)
+                        
+            except Exception as e:
+                st.error(f"Error reading file {file_path}: {str(e)}")
+                continue
+
+        if not all_records:
+            # Create a default record if no valid records found
+            all_records = [{
+                'text': 'No conversation history available',
+                'timestamp': time.time(),
+                'toxicity': {
+                    'toxicity': 0.0,
+                    'severe_toxicity': 0.0,
+                    'obscene': 0.0,
+                    'threat': 0.0,
+                    'insult': 0.0,
+                    'identity_attack': 0.0
+                }
+            }]
+
+        # Convert to DataFrame
+        df = pd.DataFrame(all_records)
+        
+        # Ensure required columns exist
+        required_columns = ['toxicity', 'sentiment', 'text', 'timestamp']
+        for col in required_columns:
+            if col not in df.columns:
+                if col == 'toxicity':
+                    df[col] = df.apply(lambda _: {
+                        'toxicity': 0.0,
+                        'severe_toxicity': 0.0,
+                        'obscene': 0.0,
+                        'threat': 0.0,
+                        'insult': 0.0,
+                        'identity_attack': 0.0
+                    }, axis=1)
+                elif col == 'sentiment':
+                    df[col] = 0.0
+                elif col == 'text':
+                    df[col] = 'No text available'
+                elif col == 'timestamp':
+                    df[col] = time.time()
+
+        # Process toxicity scores
+        try:
+            df['toxicity'] = df['toxicity'].apply(lambda x: x if isinstance(x, dict) else {})
+            df['toxicity_score'] = df['toxicity'].apply(lambda x: x.get('toxicity', 0.0))
+            df['threat'] = df['toxicity'].apply(lambda x: x.get('threat', 0.0))
+            df['insult'] = df['toxicity'].apply(lambda x: x.get('insult', 0.0))
+        except Exception as e:
+            st.error(f"Error processing toxicity scores: {str(e)}")
+            df['toxicity_score'] = 0.0
+            df['threat'] = 0.0
+            df['insult'] = 0.0
+
+        # Convert timestamp to datetime
+        try:
+            df['datetime'] = pd.to_datetime(df['timestamp'], unit='s')
+        except Exception as e:
+            st.error(f"Error converting timestamps: {str(e)}")
+            df['datetime'] = pd.Timestamp.now()
+
+        return df
+
+    except Exception as e:
+        st.error(f"Error loading conversation history: {str(e)}")
+        return pd.DataFrame()
+
+# Load conversation history
+df = load_conversation_history()
+
 # Load all conversation history files
 files = glob.glob('conversation_history.json')
 
 records = []
 for file in files:
-    with open(file, 'r') as f:
-        data = json.load(f)
-        if isinstance(data, list):
-            records.extend(data)
-        else:
-            records.append(data)
+    try:
+        with open(file, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            # Try to fix common JSON format issues
+            if not content.startswith('[') and not content.startswith('{'):
+                content = '[' + content + ']'
+            elif content.startswith('{') and not content.startswith('[{'): 
+                content = '[' + content + ']'
+            
+            try:
+                data = json.loads(content)
+                if isinstance(data, list):
+                    records.extend(data)
+                else:
+                    records.append(data)
+            except json.JSONDecodeError as e:
+                st.error(f"Error reading {file}: Invalid JSON format")
+                # Try to recover by reading line by line
+                f.seek(0)
+                for line in f:
+                    try:
+                        if line.strip():  # Skip empty lines
+                            # Clean the line and ensure it's valid JSON
+                            line = line.strip()
+                            if line.endswith(','):
+                                line = line[:-1]
+                            if not line.startswith('{'):
+                                continue
+                            record = json.loads(line)
+                            records.append(record)
+                    except json.JSONDecodeError:
+                        continue
+    except Exception as e:
+        st.error(f"Error reading {file}: {str(e)}")
+        continue
+
+# Handle case where no records were loaded
+if not records:
+    records = [{
+        'text': 'No conversation history available',
+        'timestamp': time.time(),
+        'toxicity': {'toxicity': 0, 'threat': 0, 'insult': 0},
+        'sentiment': 0
+    }]
 
 # Convert to DataFrame
 df = pd.DataFrame(records)
 
+# Ensure required columns exist
+required_columns = ['toxicity', 'sentiment', 'text', 'timestamp']
+for col in required_columns:
+    if col not in df.columns:
+        if col == 'toxicity':
+            df[col] = df.apply(lambda x: {'toxicity': 0, 'threat': 0, 'insult': 0}, axis=1)
+        elif col == 'sentiment':
+            df[col] = 0
+        elif col == 'text':
+            df[col] = 'No text available'
+        elif col == 'timestamp':
+            df[col] = time.time()
+
 # Expand Detoxify toxicity dictionary
-toxicity_scores = pd.json_normalize(df['toxicity'])
-df = df.drop(columns=['toxicity'])
-df = df.join(toxicity_scores)
+try:
+    toxicity_scores = pd.json_normalize(df['toxicity'])
+    df = df.drop(columns=['toxicity'])
+    df = df.join(toxicity_scores)
+except Exception as e:
+    st.error(f"Error processing toxicity scores: {str(e)}")
+    # Add default toxicity columns if processing fails
+    df['toxicity'] = 0
+    df['threat'] = 0
+    df['insult'] = 0
 
 # Convert timestamp to datetime
-df['datetime'] = df['timestamp'].apply(lambda x: datetime.datetime.fromtimestamp(x))
+df['datetime'] = pd.to_datetime(df['timestamp'], unit='s', errors='coerce')
+df['datetime'] = df['datetime'].fillna(pd.Timestamp.now())
 
 # --- 1. Handle Reset BEFORE Widgets ---
 if "reset_triggered" not in st.session_state:
@@ -576,12 +772,12 @@ filtered_df = filtered_df[
 ]
 
 # Apply time filtering
-now = datetime.datetime.now()
+now = datetime.now()
 
 if time_filter == "Last 24 Hours":
-    filtered_df = filtered_df[filtered_df['datetime'] >= now - datetime.timedelta(days=1)]
+    filtered_df = filtered_df[filtered_df['datetime'] >= now - pd.Timedelta(days=1)]
 elif time_filter == "Last 7 Days":
-    filtered_df = filtered_df[filtered_df['datetime'] >= now - datetime.timedelta(days=7)]
+    filtered_df = filtered_df[filtered_df['datetime'] >= now - pd.Timedelta(days=7)]
 # (Else: All Time → do nothing)
 
 # --- Summary Statistics ---
@@ -739,6 +935,21 @@ with tab2:
         # Create a clean copy just for display
         display_df = paginated_df.copy()
 
+        # Ensure required columns exist
+        required_display_columns = ['status_badge', 'text', 'toxicity', 'threat', 'insult', 'sentiment', 'datetime']
+        for col in required_display_columns:
+            if col not in display_df.columns:
+                if col == 'status_badge':
+                    display_df[col] = '✅ SAFE'
+                elif col == 'text':
+                    display_df[col] = 'No text available'
+                elif col in ['toxicity', 'threat', 'insult']:
+                    display_df[col] = 0
+                elif col == 'sentiment':
+                    display_df[col] = 0
+                elif col == 'datetime':
+                    display_df[col] = pd.Timestamp.now()
+
         # Drop unwanted columns
         columns_to_hide = ['is_user', 'timestamp', 'entities']
         columns_to_show = [col for col in display_df.columns if col not in columns_to_hide]
@@ -751,9 +962,11 @@ with tab2:
         # Apply row highlight
         styled_df = display_df.style.apply(highlight_jailbreaks, axis=1)
 
-        # Apply color to detoxify columns
+        # Apply color to detoxify columns using applymap
         detoxify_columns = ['toxicity', 'threat', 'insult']
-        styled_df = styled_df.map(color_detoxify, subset=detoxify_columns)
+        for col in detoxify_columns:
+            if col in display_df.columns:
+                styled_df = styled_df.applymap(color_detoxify, subset=[col])
 
         # Initialize selection state if not exists
         if "selected_row" not in st.session_state:
@@ -762,12 +975,44 @@ with tab2:
         # Create a container for the table and buttons
         container = st.container()
         
-        # Display the dataframe
-        st.dataframe(
-            styled_df,
-            use_container_width=True,
-            hide_index=True
-        )
+        # Display the dataframe with updated styling
+        try:
+            st.dataframe(
+                styled_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    'status_badge': st.column_config.TextColumn(
+                        'Status',
+                        help='Jailbreak status of the prompt'
+                    ),
+                    'toxicity': st.column_config.ProgressColumn(
+                        'Toxicity',
+                        help='Toxicity score',
+                        format='%.2f',
+                        min_value=0,
+                        max_value=1
+                    ),
+                    'threat': st.column_config.ProgressColumn(
+                        'Threat',
+                        help='Threat score',
+                        format='%.2f',
+                        min_value=0,
+                        max_value=1
+                    ),
+                    'insult': st.column_config.ProgressColumn(
+                        'Insult',
+                        help='Insult score',
+                        format='%.2f',
+                        min_value=0,
+                        max_value=1
+                    )
+                }
+            )
+        except Exception as e:
+            st.error(f"Error displaying dataframe: {str(e)}")
+            # Fallback to basic display
+            st.dataframe(display_df, use_container_width=True)
 
         # Add subheader and dropdown for review selection
         st.subheader("Review Analysis")
@@ -911,75 +1156,92 @@ with tab3:
     st.divider()
 
     # Safe vs Jailbreak Chart
-    
-    counts = df['is_jailbreak'].value_counts()
-    fig = px.bar(
-        x=counts.index,
-        y=counts.values,
-        title='Safe vs Jailbreak'
-    )
-    fig.update_layout(
-        paper_bgcolor='#FFF3D7',
-        plot_bgcolor='#FFF3D7',
-        font_color='black'
-    )
-    st.plotly_chart(fig)
+    try:
+        if 'is_jailbreak' in df.columns:
+            counts = df['is_jailbreak'].value_counts()
+            fig = px.bar(
+                x=counts.index,
+                y=counts.values,
+                title='Safe vs Jailbreak'
+            )
+            fig.update_layout(
+                paper_bgcolor='#FFF3D7',
+                plot_bgcolor='#FFF3D7',
+                font_color='black'
+            )
+            st.plotly_chart(fig)
+        else:
+            st.warning("No jailbreak data available for charting.")
+    except Exception as e:
+        st.error(f"Error generating jailbreak chart: {str(e)}")
 
     st.divider()
 
     # --- Sentiment Distribution ---
+    try:
+        if 'sentiment_category' in df.columns:
+            sentiment_chart_type = st.selectbox(
+                "Select Sentiment Chart Type",
+                ("Bar Chart", "Pie Chart")
+            )
 
-    sentiment_chart_type = st.selectbox(
-        "Select Sentiment Chart Type",
-        ("Bar Chart", "Pie Chart")
-    )
+            sentiment_counts = df['sentiment_category'].value_counts()
 
-    sentiment_counts = df['sentiment_category'].value_counts()
-
-    if sentiment_chart_type == "Bar Chart":
-        fig = px.bar(
-            x=sentiment_counts.index,
-            y=sentiment_counts.values,
-            title='Sentiment Split'
-        )
-        fig.update_layout(
-            paper_bgcolor='#FFF3D7',
-            plot_bgcolor='#FFF3D7',
-            font_color='black'
-        )
-        st.plotly_chart(fig)
-    elif sentiment_chart_type == "Pie Chart":
-        fig = px.pie(
-            names=sentiment_counts.index,
-            values=sentiment_counts.values,
-            title='Sentiment Split'
-        )
-        fig.update_layout(
-            paper_bgcolor='#FFF3D7',
-            plot_bgcolor='#FFF3D7',
-            font_color='black'
-        )
-        st.plotly_chart(fig)
+            if sentiment_chart_type == "Bar Chart":
+                fig = px.bar(
+                    x=sentiment_counts.index,
+                    y=sentiment_counts.values,
+                    title='Sentiment Split'
+                )
+                fig.update_layout(
+                    paper_bgcolor='#FFF3D7',
+                    plot_bgcolor='#FFF3D7',
+                    font_color='black'
+                )
+                st.plotly_chart(fig)
+            elif sentiment_chart_type == "Pie Chart":
+                fig = px.pie(
+                    names=sentiment_counts.index,
+                    values=sentiment_counts.values,
+                    title='Sentiment Split'
+                )
+                fig.update_layout(
+                    paper_bgcolor='#FFF3D7',
+                    plot_bgcolor='#FFF3D7',
+                    font_color='black'
+                )
+                st.plotly_chart(fig)
+        else:
+            st.warning("No sentiment data available for charting.")
+    except Exception as e:
+        st.error(f"Error generating sentiment chart: {str(e)}")
 
     st.divider()
+
     # Detoxify Score Distribution
-    if 'toxicity' in df.columns:
+    try:
+        detoxify_columns = ['toxicity', 'threat', 'insult']
+        available_columns = [col for col in detoxify_columns if col in df.columns]
         
-        fig = px.line(df[['toxicity', 'threat', 'insult']], title='Detoxify Score Distributions')
-        fig.update_layout(
-            paper_bgcolor='#FFF3D7',
-            plot_bgcolor='#FFF3D7',
-            font_color='black'
-        )
-        st.plotly_chart(fig)
-    st.divider()
-   # --- Moving Average of Toxicity over Time ---
-    if not filtered_df.empty:
-        scores_df = filtered_df[['datetime', 'toxicity']].copy()
+        if available_columns:
+            fig = px.line(df[available_columns], title='Detoxify Score Distributions')
+            fig.update_layout(
+                paper_bgcolor='#FFF3D7',
+                plot_bgcolor='#FFF3D7',
+                font_color='black'
+            )
+            st.plotly_chart(fig)
+        else:
+            st.warning("No Detoxify score data available for charting.")
+    except Exception as e:
+        st.error(f"Error generating Detoxify score chart: {str(e)}")
 
-        # Only proceed if toxicity exists
-        if 'toxicity' in scores_df.columns:
-            scores_df['datetime'] = filtered_df['datetime'].values
+    st.divider()
+
+    # --- Moving Average of Toxicity over Time ---
+    try:
+        if not filtered_df.empty and 'toxicity' in filtered_df.columns and 'datetime' in filtered_df.columns:
+            scores_df = filtered_df[['datetime', 'toxicity']].copy()
             scores_df = scores_df.sort_values('datetime')
             scores_df['toxicity_ma'] = scores_df['toxicity'].rolling(window=10, min_periods=1).mean()
 
@@ -992,19 +1254,27 @@ with tab3:
             st.plotly_chart(fig)
         else:
             st.warning("No toxicity data available for the current filter selection.")
-    else:
-        st.warning("No data available to plot toxicity moving average.")
+    except Exception as e:
+        st.error(f"Error generating toxicity moving average chart: {str(e)}")
 
     st.divider()
 
     ### --- Summary Panel ---
     st.markdown("## Summary Panel")
     
-    col1, col2, col3 = st.columns(3)
-    
-    col1.metric("Total Prompts", total_prompts)
-    col2.metric("% Jailbreaks", f"{percent_jailbreaks:.2f}%")
-    col3.metric("Avg Toxicity", f"{avg_toxicity:.2f}")
+    try:
+        col1, col2, col3 = st.columns(3)
+        
+        total_prompts = len(filtered_df)
+        total_jailbreaks = filtered_df['is_jailbreak'].sum() if 'is_jailbreak' in filtered_df.columns else 0
+        percent_jailbreaks = (total_jailbreaks / total_prompts * 100) if total_prompts > 0 else 0
+        avg_toxicity = filtered_df['toxicity'].mean() if 'toxicity' in filtered_df.columns else 0
+        
+        col1.metric("Total Prompts", total_prompts)
+        col2.metric("% Jailbreaks", f"{percent_jailbreaks:.2f}%")
+        col3.metric("Avg Toxicity", f"{avg_toxicity:.2f}")
+    except Exception as e:
+        st.error(f"Error generating summary panel: {str(e)}")
 
 # --- Settings Tab ---
 with tab4:
@@ -1031,11 +1301,15 @@ with tab4:
                     use_container_width=True):
             try:
                 import subprocess
-                subprocess.run(["python", "clear_history.py"], check=True)
+                result = subprocess.run(["python", "clear_history.py"], 
+                                     capture_output=True, 
+                                     text=True, 
+                                     check=True)
                 st.success("Memory cleared successfully!")
+                # Force a rerun to refresh the data
                 st.rerun()
             except subprocess.CalledProcessError as e:
-                st.error(f"Error clearing memory: {str(e)}")
+                st.error(f"Error clearing memory: {e.stderr}")
             except Exception as e:
                 st.error(f"An unexpected error occurred: {str(e)}")
 
