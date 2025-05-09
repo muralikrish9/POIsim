@@ -776,17 +776,45 @@ class JailbreakDetector:
     def _load_history(self):
         """Load conversation history from file"""
         try:
-            if os.path.exists(self.history_file):
-                with open(self.history_file, 'r') as f:
-                    history_data = json.load(f)
-                    self.conversation_history = deque(
-                        [Message.from_dict(msg) for msg in history_data],
-                        maxlen=self.max_history
-                    )
-                logging.info(f"Loaded {len(self.conversation_history)} messages from history")
-            else:
+            if not os.path.exists(self.history_file):
                 self.conversation_history = deque(maxlen=self.max_history)
                 logging.info("No existing history file found, starting with empty history")
+                return
+
+            # Try normal JSON load first
+            try:
+                with open(self.history_file, 'r', encoding='utf-8') as f:
+                    history_data = json.load(f)
+            except json.JSONDecodeError as e:
+                logging.warning(f"Standard JSON load failed: {e}. Attempting to repair file…")
+                # Attempt to repair common issues
+                with open(self.history_file, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+
+                # Wrap single object or lines into array if needed
+                if content and not content.startswith('['):
+                    content = '[' + content + ']'
+
+                # Remove trailing commas before closing braces/brackets
+                import re
+                content = re.sub(r',\s*([}\]])', r'\1', content)
+
+                # Second attempt
+                try:
+                    history_data = json.loads(content)
+                except json.JSONDecodeError:
+                    logging.error("Failed to repair JSON history file. Starting fresh history.")
+                    history_data = []
+
+            # Ensure list
+            if isinstance(history_data, dict):
+                history_data = [history_data]
+
+            self.conversation_history = deque(
+                [Message.from_dict(msg) for msg in history_data],
+                maxlen=self.max_history
+            )
+            logging.info(f"Loaded {len(self.conversation_history)} messages from history")
         except Exception as e:
             logging.error(f"Error loading history: {e}")
             self.conversation_history = deque(maxlen=self.max_history)
