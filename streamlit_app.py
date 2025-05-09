@@ -812,10 +812,49 @@ with tab1:
                 # Initialize detector
                 from classifier.jailbreak_detector import JailbreakDetector
                 detector = JailbreakDetector()
-                
                 # Analyze the prompt
                 result = detector.predict(prompt)
-            
+
+            # --- LOG TO JSON ---
+            record = {
+                'text': prompt,
+                'is_user': True,
+                'timestamp': time.time(),
+                'sentiment': result.details.get('sentiment_score', 0),
+                'toxicity': {
+                    'toxicity': result.details.get('toxicity', 0),
+                    'severe_toxicity': result.details.get('severe_toxicity', 0),
+                    'obscene': result.details.get('obscene', 0),
+                    'threat': result.details.get('threat', 0),
+                    'insult': result.details.get('insult', 0),
+                    'identity_attack': result.details.get('identity_attack', 0)
+                },
+                'analysis': {
+                    'score': result.score,
+                    'model_response': result.model_response,
+                    'explanation': result.explanation
+                }
+            }
+            # Append to conversation_history.json
+            try:
+                history_path = 'conversation_history.json'
+                try:
+                    with open(history_path, 'r', encoding='utf-8') as f:
+                        content = f.read().strip()
+                        if content:
+                            data = json.loads(content)
+                        else:
+                            data = []
+                except (FileNotFoundError, json.JSONDecodeError):
+                    data = []
+                if not isinstance(data, list):
+                    data = [data]
+                data.append(record)
+                with open(history_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=2)
+            except Exception as e:
+                st.error(f"Error saving conversation history: {e}")
+
             # Display results
             st.subheader("Analysis Results")
 
