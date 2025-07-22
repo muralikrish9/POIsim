@@ -1,87 +1,178 @@
 # Mathematical Formulation and Scoring in JailbreakDetector
 
+> **Note:** This file contains both plain text (GitHub-friendly) and LaTeX (research) versions of all formulas. Use the plain text/code blocks for best viewing on GitHub, and the LaTeX for research or PDF export.
+
 ---
 
 ## 1. Model Scoring Functions
 
 ### 1.1 BERT Model Scoring
 - **Input:** Prompt $X$
-- **Embedding:**
-  $$
-  E = E_{token} + E_{pos} + E_{seg}
-  $$
+
+**Plain Text (GitHub):**
+```
+E = E_token + E_pos + E_seg
+```
+**LaTeX (Research):**
+$$
+E = E_{token} + E_{pos} + E_{seg}
+$$
+
 - **Transformer Output:**
-  $$
-  H = \text{Transformer}(E)
-  $$
+**Plain Text (GitHub):**
+```
+H = Transformer(E)
+```
+**LaTeX (Research):**
+$$
+H = \text{Transformer}(E)
+$$
+
 - **Classification Head:**
-  $$
-  \mathbf{p}_{\text{BERT}} = \text{softmax}(W_{cls} H_{[CLS]} + b_{cls})
-  $$
-  where $\mathbf{p}_{\text{BERT}} \in \mathbb{R}^C$ (C = number of categories, e.g., JAILBREAK, HARM, etc.)
+**Plain Text (GitHub):**
+```
+p_BERT = softmax(W_cls * H_[CLS] + b_cls)
+```
+**LaTeX (Research):**
+$$
+\mathbf{p}_{\text{BERT}} = \text{softmax}(W_{cls} H_{[CLS]} + b_{cls})
+$$
+
 - **BERT Score:**
-  $$
-  S_{\text{BERT}} = \max_{c \in \text{harmful categories}} \mathbf{p}_{\text{BERT}}[c]
-  $$
+**Plain Text (GitHub):**
+```
+S_BERT = max(p_BERT[c] for c in harmful_categories)
+```
+**LaTeX (Research):**
+$$
+S_{\text{BERT}} = \max_{c \in \text{harmful categories}} \mathbf{p}_{\text{BERT}}[c]
+$$
 
 ### 1.2 Detoxify Model Scoring
 - **Input:** Prompt $X$
-- **Embedding and Transformer:**
-  $$
-  H = \text{Transformer}(E_{token}(X))
-  $$
+
+- **Transformer Output:**
+**Plain Text (GitHub):**
+```
+H = Transformer(E_token(X))
+```
+**LaTeX (Research):**
+$$
+H = \text{Transformer}(E_{token}(X))
+$$
+
 - **Toxicity Head:**
-  $$
-  S_{toxicity} = \sigma(W_{tox} \cdot \text{pool}(H) + b_{tox})
-  $$
+**Plain Text (GitHub):**
+```
+S_toxicity = sigmoid(W_tox * pool(H) + b_tox)
+```
+**LaTeX (Research):**
+$$
+S_{toxicity} = \sigma(W_{tox} \cdot \text{pool}(H) + b_{tox})
+$$
+
 - **Other Heads:**
-  $$
-  S_{severe}, S_{obscene}, S_{threat}, S_{insult}, S_{identity} = \sigma(W_{i} \cdot \text{pool}(H) + b_{i})
-  $$
+**Plain Text (GitHub):**
+```
+S_severe, S_obscene, S_threat, S_insult, S_identity = sigmoid(W_i * pool(H) + b_i)
+```
+**LaTeX (Research):**
+$$
+S_{severe}, S_{obscene}, S_{threat}, S_{insult}, S_{identity} = \sigma(W_{i} \cdot \text{pool}(H) + b_{i})
+$$
+
 - **Detoxify Score:**
-  $$
-  S_{\text{Detoxify}} = \max(S_{toxicity}, S_{severe}, S_{obscene}, S_{threat}, S_{insult}, S_{identity})
-  $$
+**Plain Text (GitHub):**
+```
+S_Detoxify = max(S_toxicity, S_severe, S_obscene, S_threat, S_insult, S_identity)
+```
+**LaTeX (Research):**
+$$
+S_{\text{Detoxify}} = \max(S_{toxicity}, S_{severe}, S_{obscene}, S_{threat}, S_{insult}, S_{identity})
+$$
 
 ### 1.3 Gemini Model Scoring
 - **Input:** Prompt $X$, Context $C$
-- **Model Output:**
-  $$
-  S_{\text{Gemini}} = f_{\text{Gemini}}(X, C)
-  $$
-  where $f_{\text{Gemini}}$ is a proprietary function returning a risk score in $[0, 1]$ and a natural language explanation.
+
+**Plain Text (GitHub):**
+```
+S_Gemini = f_Gemini(X, C)
+```
+**LaTeX (Research):**
+$$
+S_{\text{Gemini}} = f_{\text{Gemini}}(X, C)
+$$
 
 ### 1.4 Additional Scores
 - **Context Score:**
-  $$
-  S_{context} = f_{context}(X, \text{history})
-  $$
+**Plain Text (GitHub):**
+```
+S_context = f_context(X, history)
+```
+**LaTeX (Research):**
+$$
+S_{context} = f_{context}(X, \text{history})
+$$
+
 - **Manipulation Score:**
-  $$
-  S_{manip} = f_{manip}(X)
-  $$
+**Plain Text (GitHub):**
+```
+S_manip = f_manip(X)
+```
+**LaTeX (Research):**
+$$
+S_{manip} = f_{manip}(X)
+$$
+
 - **Deception Score:**
-  $$
-  S_{decep} = f_{decep}(X)
-  $$
-  (where $f_{context}, f_{manip}, f_{decep}$ are pattern-matching or ML-based functions outputting scores in $[0, 1]$)
+**Plain Text (GitHub):**
+```
+S_decep = f_decep(X)
+```
+**LaTeX (Research):**
+$$
+S_{decep} = f_{decep}(X)
+$$
 
 ---
 
 ## 2. Score Aggregation
-- **Aggregate Score:**
-  $$
-  S_{final} = \max \left( S_{\text{Gemini}},\ S_{context},\ \frac{1}{|C|} \sum_{c \in C} \mathbf{p}_{\text{BERT}}[c],\ S_{\text{BERT}},\ S_{manip},\ S_{decep},\ S_{\text{Detoxify}} \right)
-  $$
-  where $C$ is the set of harmful categories.
+
+**Plain Text (GitHub):**
+```
+S_final = max(
+    S_Gemini,
+    S_context,
+    average(p_BERT[c] for c in harmful_categories),
+    S_BERT,
+    S_manip,
+    S_decep,
+    S_Detoxify
+)
+```
+**LaTeX (Research):**
+$$
+S_{final} = \max \left( S_{\text{Gemini}},\ S_{context},\ \frac{1}{|C|} \sum_{c \in C} \mathbf{p}_{\text{BERT}}[c],\ S_{\text{BERT}},\ S_{manip},\ S_{decep},\ S_{\text{Detoxify}} \right)
+$$
+
 - **Category Assignment:**
-  $$
-  \text{Category} = \arg\max_{c} \mathbf{p}_{\text{BERT}}[c]
-  $$
-  (or as determined by Gemini/context if their score dominates)
+**Plain Text (GitHub):**
+```
+Category = argmax(p_BERT[c] for c in all_categories)
+```
+**LaTeX (Research):**
+$$
+\text{Category} = \arg\max_{c} \mathbf{p}_{\text{BERT}}[c]
+$$
 
 - **Thresholds:**
-  - If $S_{final} > \tau$ (e.g., $\tau = 0.7$), flag as high risk (JAILBREAK, HARM, etc.)
+**Plain Text (GitHub):**
+```
+if S_final > tau:  # e.g., tau = 0.7
+    flag as high risk (JAILBREAK, HARM, etc.)
+```
+**LaTeX (Research):**
+- If $S_{final} > \tau$ (e.g., $\tau = 0.7$), flag as high risk (JAILBREAK, HARM, etc.)
 
 ---
 
@@ -160,6 +251,11 @@
 ### 7.1 BERT Model Scoring
 
 #### Embedding:
+**Plain Text (GitHub):**
+```
+E = E_token + E_pos + E_seg
+```
+**LaTeX (Research):**
 $$
 E = E_{token} + E_{pos} + E_{seg}
 $$
@@ -169,6 +265,11 @@ $$
 - **Why:** This sum forms the input to the transformer, capturing both the content and structure of the prompt.
 
 #### Transformer Output:
+**Plain Text (GitHub):**
+```
+H = Transformer(E)
+```
+**LaTeX (Research):**
 $$
 H = \text{Transformer}(E)
 $$
@@ -176,6 +277,11 @@ $$
 - **Why:** The transformer processes the input embeddings to capture relationships and context between words.
 
 #### Classification Head:
+**Plain Text (GitHub):**
+```
+p_BERT = softmax(W_cls * H_[CLS] + b_cls)
+```
+**LaTeX (Research):**
 $$
 \mathbf{p}_{\text{BERT}} = \text{softmax}(W_{cls} H_{[CLS]} + b_{cls})
 $$
@@ -186,6 +292,11 @@ $$
 - **Why:** This gives a probability for each possible prompt nature, allowing fine-grained classification.
 
 #### BERT Score:
+**Plain Text (GitHub):**
+```
+S_BERT = max(p_BERT[c] for c in harmful_categories)
+```
+**LaTeX (Research):**
 $$
 S_{\text{BERT}} = \max_{c \in \text{harmful categories}} \mathbf{p}_{\text{BERT}}[c]
 $$
@@ -199,6 +310,11 @@ $$
 ### 7.2 Detoxify Model Scoring
 
 #### Transformer Output:
+**Plain Text (GitHub):**
+```
+H = Transformer(E_token(X))
+```
+**LaTeX (Research):**
 $$
 H = \text{Transformer}(E_{token}(X))
 $$
@@ -206,6 +322,11 @@ $$
 - **Why:** Prepares the prompt for toxicity analysis.
 
 #### Toxicity Head:
+**Plain Text (GitHub):**
+```
+S_toxicity = sigmoid(W_tox * pool(H) + b_tox)
+```
+**LaTeX (Research):**
 $$
 S_{toxicity} = \sigma(W_{tox} \cdot \text{pool}(H) + b_{tox})
 $$
@@ -215,6 +336,11 @@ $$
 - **Why:** Produces a probability that the prompt is toxic.
 
 #### Other Heads:
+**Plain Text (GitHub):**
+```
+S_severe, S_obscene, S_threat, S_insult, S_identity = sigmoid(W_i * pool(H) + b_i)
+```
+**LaTeX (Research):**
 $$
 S_{severe}, S_{obscene}, S_{threat}, S_{insult}, S_{identity} = \sigma(W_{i} \cdot \text{pool}(H) + b_{i})
 $$
@@ -222,6 +348,11 @@ $$
 - **Why:** Allows the system to detect and respond to different types of harmful content.
 
 #### Detoxify Score:
+**Plain Text (GitHub):**
+```
+S_Detoxify = max(S_toxicity, S_severe, S_obscene, S_threat, S_insult, S_identity)
+```
+**LaTeX (Research):**
 $$
 S_{\text{Detoxify}} = \max(S_{toxicity}, S_{severe}, S_{obscene}, S_{threat}, S_{insult}, S_{identity})
 $$
@@ -232,6 +363,11 @@ $$
 
 ### 7.3 Gemini Model Scoring
 
+**Plain Text (GitHub):**
+```
+S_Gemini = f_Gemini(X, C)
+```
+**LaTeX (Research):**
 $$
 S_{\text{Gemini}} = f_{\text{Gemini}}(X, C)
 $$
@@ -245,6 +381,11 @@ $$
 ### 7.4 Additional Scores
 
 #### Context Score:
+**Plain Text (GitHub):**
+```
+S_context = f_context(X, history)
+```
+**LaTeX (Research):**
 $$
 S_{context} = f_{context}(X, \text{history})
 $$
@@ -252,6 +393,11 @@ $$
 - **Why:** Captures risks that emerge only in multi-turn conversations.
 
 #### Manipulation Score:
+**Plain Text (GitHub):**
+```
+S_manip = f_manip(X)
+```
+**LaTeX (Research):**
 $$
 S_{manip} = f_{manip}(X)
 $$
@@ -259,6 +405,11 @@ $$
 - **Why:** Flags attempts to trick the model into unsafe behavior.
 
 #### Deception Score:
+**Plain Text (GitHub):**
+```
+S_decep = f_decep(X)
+```
+**LaTeX (Research):**
 $$
 S_{decep} = f_{decep}(X)
 $$
@@ -269,6 +420,19 @@ $$
 
 ### 7.5 Score Aggregation
 
+**Plain Text (GitHub):**
+```
+S_final = max(
+    S_Gemini,
+    S_context,
+    average(p_BERT[c] for c in harmful_categories),
+    S_BERT,
+    S_manip,
+    S_decep,
+    S_Detoxify
+)
+```
+**LaTeX (Research):**
 $$
 S_{final} = \max \left( S_{\text{Gemini}},\ S_{context},\ \frac{1}{|C|} \sum_{c \in C} \mathbf{p}_{\text{BERT}}[c],\ S_{\text{BERT}},\ S_{manip},\ S_{decep},\ S_{\text{Detoxify}} \right)
 $$
@@ -280,6 +444,11 @@ $$
 
 ### 7.6 Category Assignment
 
+**Plain Text (GitHub):**
+```
+Category = argmax(p_BERT[c] for c in all_categories)
+```
+**LaTeX (Research):**
 $$
 \text{Category} = \arg\max_{c} \mathbf{p}_{\text{BERT}}[c]
 $$
